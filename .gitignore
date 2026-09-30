@@ -1,0 +1,23 @@
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Entornos y dependencias
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+
+# Artefactos generados (se recrean con setup)
+frontend/dist/
+backend/index/
+backend/.model_cache/
+
+# Documento fuente: contiene anexos internos, se coloca localmente
+rag-data/*
+!rag-data/.gitkeep
+
+# Varios
+*.log
+.DS_Store

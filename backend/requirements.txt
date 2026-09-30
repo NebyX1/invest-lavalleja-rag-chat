@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+httpx
+python-dotenv
+numpy
+fastembed
+python-docx
+langgraph
+langchain-core
+langchain-ollama

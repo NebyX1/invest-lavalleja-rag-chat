@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+  name: "lavalleja";
+  default: true;
+  color-scheme: light;
+  --color-base-100: oklch(99% 0.004 100);
+  --color-base-200: oklch(96.5% 0.012 110);
+  --color-base-300: oklch(91% 0.02 110);
+  --color-base-content: oklch(27% 0.03 160);
+  --color-primary: oklch(42% 0.09 160);
+  --color-primary-content: oklch(98% 0.01 160);
+  --color-secondary: oklch(68% 0.13 60);
+  --color-secondary-content: oklch(25% 0.05 60);
+  --color-accent: oklch(58% 0.12 40);
+  --color-accent-content: oklch(98% 0.01 40);
+  --color-neutral: oklch(30% 0.04 160);
+  --color-neutral-content: oklch(95% 0.01 160);
+  --color-info: oklch(65% 0.12 235);
+  --color-success: oklch(65% 0.15 155);
+  --color-warning: oklch(80% 0.15 85);
+  --color-error: oklch(60% 0.2 25);
+  --radius-selector: 1rem;
+  --radius-field: 0.75rem;
+  --radius-box: 1rem;
+}
+
+.prose-chat p { margin: 0 0 0.6em; }
+.prose-chat p:last-child { margin-bottom: 0; }
+.prose-chat ul { list-style: disc; padding-left: 1.25rem; margin: 0 0 0.6em; }
+.prose-chat ol { list-style: decimal; padding-left: 1.25rem; margin: 0 0 0.6em; }
+.prose-chat li { margin: 0.15em 0; }
+.prose-chat a { text-decoration: underline; color: var(--color-primary); }
+.prose-chat strong { font-weight: 650; }
+.prose-chat h1, .prose-chat h2, .prose-chat h3 { font-weight: 650; margin: 0.4em 0 0.3em; }
+
+@keyframes blink { 50% { opacity: 0; } }
+.cursor::after { content: "▍"; margin-left: 2px; animation: blink 1s steps(1) infinite; }

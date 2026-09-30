@@ -1,0 +1,53 @@
+# Gianna · Asesora de inversiones de Invest Lavalleja
+
+Chat de inversiones con **RAG y agente**: Gianna orienta a inversores y emprendedores que evalúan instalar un proyecto en el departamento de Lavalleja (Uruguay), a partir de la *Guía de Inversiones 2026*. Corre 100 % en CPU (~650 MB de RAM) y usa Ollama Cloud para el modelo.
+
+## Qué hace
+
+- **Asesora, no solo responde:** arma el perfil del inversor durante la charla, recomienda una opción principal con su porqué y propone el siguiente paso.
+- **Profundiza a demanda:** ante "contame más" consulta de nuevo la guía y arma un plan (cómo entrar, cómo validar, condiciones, cuándo no avanzar, próximos pasos).
+- **Usa herramientas:** ficha completa de una oportunidad o zona, filtros por zona y nivel, comparación de opciones, contactos institucionales y un simulador de equilibrio con los supuestos del usuario.
+- **Cuida los hechos:** cita las fuentes de la guía `[S##]`, no promete rentabilidad ni permisos y deriva a los organismos competentes.
+
+## Cómo funciona
+
+```mermaid
+flowchart LR
+    U[React + Vite] <-->|SSE| API[FastAPI]
+    API --> AG[Agente LangGraph]
+    AG <--> LLM[Ollama Cloud]
+    AG --> RT[Recuperación híbrida<br/>embeddings + BM25]
+    AG --> TL[Herramientas]
+    RT --> IDX[(Índice local<br/>155 chunks)]
+    DOC[[Guía .docx]] -. ingesta .-> IDX
+```
+
+1. **Ingesta:** el `.docx` se convierte en fragmentos con su ruta de títulos, se calculan los embeddings y se genera un catálogo de zonas y oportunidades. Los anexos internos se excluyen.
+2. **Consulta:** un paso de planificación deduce la intención y el perfil, y precarga el contexto relevante.
+3. **Agente:** el modelo decide si responde directo o consulta herramientas (hasta 4 rondas) y responde en *streaming*.
+
+## Tecnologías
+
+FastAPI · LangGraph · Ollama Cloud · FastEmbed (ONNX) · NumPy · BM25 · React · Vite · Tailwind 4 · daisyUI 5.
+
+## Inicio rápido
+
+```bash
+git clone https://github.com/NebyX1/invest-lavalleja-rag-chat.git
+cd invest-lavalleja-rag-chat
+cp .env.example .env          # completá OLLAMA_API_KEY
+# copiá el .docx de la guía en rag-data/
+.\setup.ps1                   # Linux/macOS: ./setup.sh
+.\start.ps1                   # Linux/macOS: ./start.sh  → http://localhost:8010
+```
+
+Detalles y solución de problemas en [Setup.md](Setup.md).
+
+## Documentación
+
+- [Setup.md](Setup.md): instalación, variables de entorno y tareas habituales.
+- [Arquitectura.md](Arquitectura.md): diagramas, flujos, agente, herramientas, seguridad y decisiones de diseño.
+
+## Aviso
+
+Gianna orienta con información de la guía; no constituye asesoramiento financiero, legal ni una habilitación. Los datos normativos y de contacto deben confirmarse antes de decidir. Las fichas de oportunidad son conceptos a validar, no ofertas de activos.
