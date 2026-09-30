@@ -1,12 +1,13 @@
 # Gianna · Asesora de inversiones de Invest Lavalleja
 
-Chat de inversiones con **RAG y agente**: Gianna orienta a inversores y emprendedores que evalúan instalar un proyecto en el departamento de Lavalleja (Uruguay), a partir de la *Guía de Inversiones 2026*. Corre 100 % en CPU (~720 MB de RAM), guarda el conocimiento en LanceDB embebido (sin servidor) y usa Ollama Cloud para el modelo.
+Chat de inversiones con **RAG y agente**: Gianna orienta a inversores y emprendedores que evalúan instalar un proyecto en el departamento de Lavalleja (Uruguay), a partir de la *Guía de Inversiones 2026*. Corre 100 % en CPU (~720 MB de RAM sin contar el reranker), guarda el conocimiento en LanceDB embebido (sin servidor) y usa Ollama Cloud para el modelo.
 
 ## Qué hace
 
 - **Asesora, no solo responde:** arma el perfil del inversor durante la charla, recomienda una opción principal con su porqué y propone el siguiente paso.
 - **Profundiza a demanda:** ante "contame más" consulta de nuevo la guía y arma un plan (cómo entrar, cómo validar, condiciones, cuándo no avanzar, próximos pasos).
 - **Usa herramientas:** ficha completa de una oportunidad o zona, filtros por zona y nivel, comparación de opciones, contactos institucionales y un simulador de equilibrio con los supuestos del usuario.
+- **Tiene una segunda oportunidad de búsqueda:** si la primera recuperación no responde bien, el modelo puede pedir un reranker multilingüe liviano (CPU) que reordena los candidatos y trae el fragmento que realmente contesta la pregunta.
 - **Cuida los hechos:** cita las fuentes de la guía `[S##]`, no promete rentabilidad ni permisos y deriva a los organismos competentes.
 
 ## Cómo funciona
@@ -18,17 +19,19 @@ flowchart LR
     AG <--> LLM[Ollama Cloud]
     AG --> RT[Recuperación híbrida<br/>embeddings + texto + RRF]
     AG --> TL[Herramientas]
+    TL -->|segunda oportunidad| RR[Reranker<br/>cross-encoder ONNX]
+    RR --> RT
     RT --> IDX[(LanceDB<br/>155 chunks)]
     DOC[[Guía .docx]] -. ingesta .-> IDX
 ```
 
 1. **Ingesta:** el `.docx` se convierte en fragmentos con su ruta de títulos, se calculan los embeddings y se genera un catálogo de zonas y oportunidades. Los anexos internos se excluyen.
-2. **Consulta:** un paso de planificación deduce la intención y el perfil, y precarga el contexto relevante.
-3. **Agente:** el modelo decide si responde directo o consulta herramientas (hasta 4 rondas) y responde en *streaming*.
+2. **Consulta:** un paso de planificación deduce la intención y el perfil, y precarga el contexto relevante junto con una señal de confianza.
+3. **Agente:** el modelo decide si responde directo o consulta herramientas (hasta 4 rondas) y responde en *streaming*. Si el contexto inicial es débil o `buscar_guia` no alcanza, puede llamar a `buscar_guia_reranker`, que reordena ~24 candidatos con un cross-encoder antes de responder.
 
 ## Tecnologías
 
-FastAPI · LangGraph · Ollama Cloud · LanceDB · FastEmbed (ONNX) · React · Vite · Tailwind 4 · daisyUI 5.
+FastAPI · LangGraph · Ollama Cloud · LanceDB · FastEmbed (ONNX) · Reranker `mmarco-mMiniLMv2` (ONNX, CPU) · React · Vite · Tailwind 4 · daisyUI 5.
 
 ## Inicio rápido
 

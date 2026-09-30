@@ -8,10 +8,10 @@ Un chat RAG que actúe como **asesora de inversiones** (no como buscador), con e
 
 | Restricción | Cómo se resuelve |
 |---|---|
-| Todo en CPU, poco consumo de RAM | Embeddings ONNX de 384 dimensiones, LanceDB embebido (sin servidor), ~720 MB de RAM en total |
+| Todo en CPU, poco consumo de RAM | Embeddings ONNX de 384 dimensiones, reranker ONNX cuantizado (~118 MB), LanceDB embebido (sin servidor); ~720 MB de RAM medidos antes de sumar el reranker |
 | Open source y liviano | FastAPI, FastEmbed, LanceDB, LangGraph, React/Vite |
 | Modelos en la nube | LLM en Ollama Cloud (una sola clave, sin GPU local) |
-| Respuestas confiables | Recuperación híbrida, citas `[S##]` de la guía, reglas de seguridad factual en el prompt |
+| Respuestas confiables | Recuperación híbrida, reranker como segunda oportunidad, citas `[S##]` de la guía, reglas de seguridad factual en el prompt |
 | Rapidez | Índice en memoria, streaming SSE, planificación con un llamado corto |
 
 ## 2. Stack
@@ -22,6 +22,7 @@ Un chat RAG que actúe como **asesora de inversiones** (no como buscador), con e
 | Agente | LangGraph + `langchain-ollama` | Ciclo asesor ⇄ herramientas con estado explícito y límite de rondas |
 | Embeddings | `paraphrase-multilingual-MiniLM-L12-v2` con FastEmbed (ONNX Runtime, CPU) | Multilingüe, ~220 MB, rápido sin PyTorch |
 | Recuperación | Coseno denso + texto completo (FTS con stemmer en español) + fusión RRF | Semántica y palabras exactas (códigos O##, Z#, decretos) |
+| Reranker | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (ONNX cuantizado, ~118 MB, CPU, multilingüe con español) vía FastEmbed | Segunda oportunidad para el LLM cuando la primera búsqueda no alcanza; se precarga al iniciar el servidor. Los rerankers livianos de FastEmbed son solo en inglés y los multilingües integrados pesan ~1 GB; este se registra como modelo propio (sección 5.2) |
 | Índice | LanceDB embebido en disco (`backend/index/lance/`), con `chunks.json` y `overview.txt` | Filtros por metadatos, ANN para crecer y datos fuera de la RAM. Alternativa NumPy en memoria (sección 5.1) |
 | Parseo | `python-docx` | Recorre el Word en orden, respeta títulos y tablas |
 | API | FastAPI + Server-Sent Events | Streaming token a token |
@@ -38,6 +39,7 @@ flowchart LR
         API["/api/chat<br/>SSE"]
         AG[Agente LangGraph]
         RT[Retriever híbrido<br/>denso + texto + RRF]
+        RR[Reranker<br/>cross-encoder ONNX]
         TL[Herramientas]
         IDX[(LanceDB<br/>chunks.json<br/>overview.txt)]
     end
@@ -50,6 +52,8 @@ flowchart LR
     AG --> RT
     AG --> TL
     TL --> RT
+    TL -->|segunda oportunidad| RR
+    RR --> RT
     RT --> IDX
     AG <-->|HTTPS| OL
 ```
@@ -127,23 +131,50 @@ Prueba de escala con 100.000 fragmentos sintéticos de 384 dimensiones: LanceDB 
 
 **Metadatos por fragmento:** `zone` (Z1–Z7), `card` (O01–O16) y `doc` (documento de origen). `Retriever.search(..., where={"zone": "Z5"})` filtra con ambos backends; es la base para sumar más documentos y filtrar por audiencia, vigencia o alcance territorial.
 
+### 5.2 Reranker: segunda oportunidad para el LLM
+
+La búsqueda híbrida es rápida (~26 ms) pero ordena por similitud de vectores y palabras, no por si el fragmento *responde* la pregunta. Para los casos en que el primer intento no alcanza, el agente dispone de un reranker **a demanda**, no como paso fijo: el LLM decide cuándo pagarlo.
+
+```mermaid
+flowchart LR
+    Q[Consulta reformulada<br/>por el LLM] --> C[search_multi + search<br/>~24 candidatos únicos]
+    C --> P[Pares consulta-fragmento]
+    P --> CE[Cross-encoder mMiniLM<br/>ONNX cuantizado, CPU]
+    CE --> S[Sigmoide del logit<br/>puntaje 0-1]
+    S --> T[Top-5 reordenado]
+```
+
+- **Modelo:** `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, entrenado con mMARCO (incluye español), en la variante ONNX cuantizada `onnx/model_quint8_avx2.onnx` (~118 MB). Se ejecuta con el `onnxruntime` que ya trae FastEmbed, sin PyTorch ni dependencias nuevas. Se define en `RERANK_MODEL` y `RERANK_FILE` (`config.py`).
+- **Integración:** `Reranker` en `rag.py` se registra con `TextCrossEncoder.add_custom_model`, se descarga a `backend/.model_cache/` y se precarga en el arranque (`main.py`) para que el primer uso no espere.
+- **Candidatos:** `Retriever.rerank(query, k=5, pool=24)` une los resultados de `search_multi` y `search` (sin duplicados), los puntúa con el cross-encoder y devuelve los `k` mejores con su campo `rerank`.
+- **Costo:** unos 3–6 s por consulta en CPU (24 pares). Por eso no se aplica a cada mensaje.
+
+**Medición puntual** (8 consultas coloquiales en español, con los fragmentos correctos etiquetados a mano; conjunto no versionado, sobre el corpus reconstruido de 224 fragmentos):
+
+| | MRR | Acierto en top-1 | Acierto en top-3 |
+|---|---|---|---|
+| Búsqueda híbrida | 0,875 | 7/8 | 7/8 |
+| Con reranker | 0,938 | 7/8 | 8/8 |
+
+Rescató una consulta que la búsqueda híbrida fallaba por completo ("plazos del beneficio fiscal"). Es una muestra pequeña: indica dirección, no una garantía.
+
 ## 6. El agente (LangGraph)
 
 ```mermaid
 stateDiagram-v2
     [*] --> entender
-    entender --> asesor
+    entender --> asesor: contexto + señal de confianza
     asesor --> herramientas: hay tool_calls<br/>(máx. 4 rondas)
     herramientas --> asesor
     asesor --> [*]: respuesta final
 ```
 
-**Estado** (`AgentState`): `messages`, `profile`, `mode`, `context`, `sources`, `plan`, `rounds`.
+**Estado** (`AgentState`): `messages`, `profile`, `mode`, `context`, `sources`, `plan`, `rounds`, `low_confidence`.
 
 | Nodo | Qué hace |
 |---|---|
-| `entender` | Llamado corto al LLM (JSON, temperatura 0) que devuelve `intent` (explorar / profundizar / dato / saludo / fuera de tema), `profile` (lo que el usuario dijo de sí mismo), `codes` y `zones` en foco y 1–3 `queries` autosuficientes. Resuelve referencias ("la primera", "esa"). Luego precarga el contexto con `gather`. Si el planificador falla, usa una heurística. |
-| `asesor` | LLM con herramientas enlazadas. Recibe el prompt de sistema (rol + herramientas + catálogo + perfil + modo + contexto inicial) y la conversación. Puede responder directo o pedir herramientas. Tras 4 rondas se le retiran las herramientas para forzar la respuesta. |
+| `entender` | Llamado corto al LLM (JSON, temperatura 0) que devuelve `intent` (explorar / profundizar / dato / saludo / fuera de tema), `profile` (lo que el usuario dijo de sí mismo), `codes` y `zones` en foco y 1–3 `queries` autosuficientes. Resuelve referencias ("la primera", "esa"). Luego precarga el contexto con `gather`. Si el planificador falla, usa una heurística. Además calcula `low_confidence`: es verdadero si la mejor similitud coseno del contexto es menor a `LOW_CONFIDENCE` (0,45) y la intención no es saludo ni fuera de tema. |
+| `asesor` | LLM con herramientas enlazadas. Recibe el prompt de sistema (rol + herramientas + catálogo + perfil + modo + contexto inicial) y la conversación. Puede responder directo o pedir herramientas. Tras 4 rondas se le retiran las herramientas para forzar la respuesta. Si `low_confidence` es verdadero, el prompt agrega una nota que le sugiere (sin obligarlo) usar `buscar_guia_reranker` con una consulta reformulada. |
 | `herramientas` | `ToolNode` de LangGraph que ejecuta las llamadas y devuelve los resultados al asesor. |
 
 ### Herramientas (`backend/tools.py`)
@@ -151,6 +182,7 @@ stateDiagram-v2
 | Herramienta | Uso |
 |---|---|
 | `buscar_guia(consulta)` | Búsqueda híbrida sobre toda la guía (permisos, impuestos, riesgos, localización…) |
+| `buscar_guia_reranker(consulta)` | Segunda oportunidad: recupera ~24 candidatos y los reordena con el cross-encoder (top-5). Más lenta (3–6 s); el prompt indica al LLM usarla si el contexto inicial o `buscar_guia` no traen lo que necesita |
 | `ver_ficha(O##)` | Ficha completa de una oportunidad |
 | `ver_zona(Z#)` | Detalle completo de una zona |
 | `filtrar_oportunidades(zona, nivel)` | "¿Qué nivel A hay en Z5?" |
@@ -184,7 +216,7 @@ sequenceDiagram
     G->>L: planificador (JSON)
     L-->>G: intent, perfil, foco, queries
     G->>R: gather(queries, fichas, zonas)
-    R-->>G: contexto inicial
+    R-->>G: contexto inicial + señal de confianza
     A-->>U: sources
     loop hasta 4 rondas
         G->>L: asesor (con herramientas)
@@ -193,6 +225,7 @@ sequenceDiagram
             A-->>U: reset + status "Revisando la ficha O12…"
             G->>R: ejecuta herramientas
             R-->>G: resultados
+            Note over G,R: buscar_guia_reranker: ~24 candidatos, cross-encoder, top-5
         else respuesta final
             L-->>G: tokens
             A-->>U: token (streaming)
@@ -223,7 +256,7 @@ Definidos en `backend/prompt.py`:
 - **Sin datos duros inventados:** cifras, plazos, contactos e inmuebles solo si están en la guía o los aporta el usuario.
 - **Resistencia a prompt injection:** el catálogo, el contexto, los resultados de herramientas y los mensajes del usuario se declaran como *datos*, no como instrucciones.
 - **`PLANNER_PROMPT`:** define el JSON del planificador y prohíbe suponer datos del perfil que el usuario no dio.
-- **`TOOLS_GUIDE`:** cuándo usar cada herramienta y que se llamen directamente, sin texto previo.
+- **`TOOLS_GUIDE`:** cuándo usar cada herramienta y que se llamen directamente, sin texto previo. Para `buscar_guia_reranker` indica reformular con términos concretos de la guía y usarla solo si hace falta, porque es más lenta.
 
 ## 9. Frontend
 
@@ -255,6 +288,7 @@ Definidos en `backend/prompt.py`:
 | Primer texto | 1–3 s |
 | Respuesta completa | 2–6 s, según cuántas herramientas use el agente |
 | Índice | 155 chunks, ~90.000 caracteres, embeddings float16 |
+| Reranker | 3–6 s por consulta (24 pares, CPU, 2 hilos), solo cuando el LLM lo pide; el modelo se descarga una vez (~118 MB) |
 
 ## 12. Estructura del repositorio
 
@@ -265,12 +299,12 @@ Definidos en `backend/prompt.py`:
 │   ├── graph.py         # Grafo LangGraph: entender → asesor ⇄ herramientas
 │   ├── advisor.py       # Planificador (intención, perfil, foco, consultas)
 │   ├── tools.py         # Herramientas del agente
-│   ├── rag.py           # Retriever: expansión de consultas, fusión RRF, lookup/gather
+│   ├── rag.py           # Retriever: expansión de consultas, fusión RRF, lookup/gather, Reranker
 │   ├── store.py         # Almacenes: LanceDB (por defecto) y NumPy (RAM)
 │   ├── lexical.py       # Tokenización y BM25 en memoria (modo numpy)
 │   ├── prompt.py        # Prompts del asesor, planificador y guía de herramientas
 │   ├── ingest.py        # .docx → chunks + embeddings + catálogo
-│   ├── config.py        # Rutas y variables de entorno
+│   ├── config.py        # Rutas, modelos (embeddings y reranker) y variables de entorno
 │   └── requirements.txt
 ├── frontend/            # React + Vite + Tailwind + daisyUI
 ├── rag-data/            # Aquí va el .docx (no se versiona)
@@ -286,4 +320,6 @@ Definidos en `backend/prompt.py`:
 - **Un solo documento:** para más fuentes basta con ingestar los documentos con su campo `doc` y sumar metadatos de audiencia, vigencia y alcance territorial para filtrar antes de recuperar, como propone la propia guía (LanceDB ya soporta los filtros). Hoy el texto de los fragmentos sigue cargado en memoria (`chunks.json`); con cientos de miles de fragmentos conviene leerlo desde la tabla.
 - **Geografía aproximada:** el mapeo norte/sur a zonas Z1–Z7 está en el prompt y es una aproximación; debe validarlo el equipo de Lavalleja.
 - **Vigencia:** los datos normativos y contactos son los del corte de la guía; deben revisarse antes de decisiones reales.
-- **Evaluación:** falta un conjunto de preguntas de prueba automatizado (exactitud, cita que respalda la frase, fecha correcta, separación de hipótesis y hechos).
+- **Evaluación:** falta un conjunto de preguntas de prueba automatizado (exactitud, cita que respalda la frase, fecha correcta, separación de hipótesis y hechos). La medición del reranker (sección 5.2) es puntual y no está versionada.
+- **Umbral de confianza:** `LOW_CONFIDENCE` es una señal débil (una consulta correcta puede puntuar bajo y una fallida, alto); por eso solo sugiere el reranker. Conviene recalibrarlo con conversaciones reales.
+- **Reranker:** validado en Windows x86 con la variante `quint8_avx2`; en otras arquitecturas puede requerir cambiar `RERANK_FILE` por otra variante ONNX del mismo modelo.

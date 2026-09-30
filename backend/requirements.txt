@@ -3,7 +3,8 @@ uvicorn[standard]
 httpx
 python-dotenv
 numpy
-fastembed
+# El reranker usa TextCrossEncoder.add_custom_model; verificado con 0.8.1
+fastembed>=0.8.1
 python-docx
 langgraph
 langchain-core

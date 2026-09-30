@@ -12,6 +12,9 @@ MODEL_CACHE = ROOT / "backend" / ".model_cache"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
 EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+# Cross-encoder multilingüe (mMARCO, incluye español) en ONNX cuantizado de ~118 MB
+RERANK_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+RERANK_FILE = "onnx/model_quint8_avx2.onnx"
 
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "https://ollama.com").rstrip("/")

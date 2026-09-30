@@ -15,6 +15,11 @@ from rag import Retriever
 from tools import build_tools
 
 MAX_TOOL_ROUNDS = 4
+LOW_CONFIDENCE = 0.45  # similitud coseno máxima por debajo de la cual el contexto inicial se considera débil
+LOW_CONFIDENCE_NOTE = (
+    "\n\nCONFIANZA DEL CONTEXTO: baja. Los fragmentos recuperados parecen poco relacionados con la consulta; "
+    "considerá buscar_guia_reranker con una consulta reformulada antes de responder."
+)
 
 
 class Turn:
@@ -32,6 +37,7 @@ class AgentState(TypedDict):
     sources: list[str]
     plan: dict
     rounds: int
+    low_confidence: bool
 
 
 def build_context(hits) -> str:
@@ -63,6 +69,8 @@ def build_graph(retriever: Retriever, overview: str, http_client):
             "sources": list(dict.fromkeys(h["section"].split(" > ", 1)[-1] for h in hits if h["score"] >= 0.4))[:3],
             "plan": p,
             "rounds": 0,
+            "low_confidence": p["intent"] not in ("saludo", "fuera_de_tema")
+            and max((h["score"] for h in hits), default=0.0) < LOW_CONFIDENCE,
         }
 
     async def asesor(state: AgentState):
@@ -71,6 +79,7 @@ def build_graph(retriever: Retriever, overview: str, http_client):
             f"\n\nPERFIL DEL INVERSOR (deducido del chat): {state['profile'] or 'todavía sin datos'}"
             f"\n\nMODO DE ESTA RESPUESTA: {state['mode']}"
             f"\n\nCONTEXTO INICIAL RECUPERADO:\n{state['context']}"
+            f"{state['low_confidence'] and LOW_CONFIDENCE_NOTE or ''}"
         )
         model = llm_tools if state["rounds"] < MAX_TOOL_ROUNDS else llm
         msg: AIMessage = await model.ainvoke([SystemMessage(system), *state["messages"]])

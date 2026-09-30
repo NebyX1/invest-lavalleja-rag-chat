@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import time
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     if not OLLAMA_API_KEY or not OLLAMA_MODEL:
         raise RuntimeError("Faltan OLLAMA_API_KEY u OLLAMA_MODEL en .env")
     retriever = Retriever()
+    await asyncio.to_thread(retriever.reranker.score, "warmup", ["warmup"])  # evita la carga en el primer uso
     overview = (INDEX_DIR / "overview.txt").read_text(encoding="utf-8")
     state["retriever"] = retriever
     state["titles"] = dict(re.findall(r"^- (O\d\d) ([^|]+?) \|", overview, re.M))
@@ -77,6 +79,8 @@ def tool_status(tc: dict) -> str:
             return "Buscando contactos institucionales…"
         case "simulador_equilibrio":
             return "Calculando escenarios…"
+        case "buscar_guia_reranker":
+            return f"Refinando la búsqueda con el reranker: {str(a.get('consulta', ''))[:60]}…"
         case _:
             return f"Profundizando en la guía: {str(a.get('consulta', ''))[:70]}…"
 

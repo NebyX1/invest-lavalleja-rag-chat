@@ -1,11 +1,13 @@
 """Recuperación híbrida: embeddings densos (ONNX/CPU) + léxica, fusionadas con RRF. El almacén es intercambiable."""
 import json
+import math
 import re
+import threading
 from functools import lru_cache
 
 import numpy as np
 
-from config import EMBED_MODEL, INDEX_DIR, MODEL_CACHE, VECTOR_BACKEND
+from config import EMBED_MODEL, INDEX_DIR, MODEL_CACHE, RERANK_FILE, RERANK_MODEL, VECTOR_BACKEND
 from lexical import tokenize  # noqa: F401  (reexportado para tools.py)
 from store import make_backend
 
@@ -29,6 +31,37 @@ def expand(query: str) -> str:
     return f"{query} {' '.join(extra)}" if extra else query
 
 
+class Reranker:
+    """Cross-encoder ONNX en CPU; se descarga y carga en el primer uso."""
+
+    def __init__(self):
+        self._model = None
+        self._lock = threading.Lock()
+
+    def _load(self):
+        with self._lock:
+            if self._model is None:
+                from fastembed.common.model_description import ModelSource
+                from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+                try:
+                    TextCrossEncoder.add_custom_model(
+                        RERANK_MODEL,
+                        sources=ModelSource(hf=RERANK_MODEL),
+                        model_file=RERANK_FILE,
+                        size_in_gb=0.12,
+                    )
+                except ValueError:  # ya registrado
+                    pass
+                self._model = TextCrossEncoder(RERANK_MODEL, cache_dir=str(MODEL_CACHE), threads=2)
+        return self._model
+
+    def score(self, query: str, docs: list[str]) -> list[float]:
+        """Relevancia en 0-1 (sigmoide del logit) de cada documento frente a la consulta."""
+        raw = list(self._load().rerank(query, docs, batch_size=16))
+        return [1 / (1 + math.exp(-max(min(s, 30.0), -30.0))) for s in raw]
+
+
 class Retriever:
     def __init__(self):
         self.chunks = json.loads((INDEX_DIR / "chunks.json").read_text(encoding="utf-8"))
@@ -47,6 +80,7 @@ class Retriever:
         self.model = TextEmbedding(EMBED_MODEL, cache_dir=str(MODEL_CACHE), threads=2)
         self._embed = lru_cache(maxsize=256)(self._embed_uncached)
         self._embed("warmup")
+        self.reranker = Reranker()
 
     def _embed_uncached(self, text: str):
         v = np.array(next(iter(self.model.embed([text]))), dtype=np.float32)
@@ -78,6 +112,16 @@ class Retriever:
                     seen.add(lst[rank]["id"])
                     out.append(lst[rank])
         return out[:k]
+
+    def rerank(self, query: str, k: int = 5, pool: int = 24):
+        """Amplía los candidatos (varias consultas + expansión) y los reordena con el cross-encoder."""
+        cands = {h["id"]: h for h in self.search_multi(query, pool)}
+        for h in self.search(query, pool):
+            cands.setdefault(h["id"], h)
+        hits = list(cands.values())
+        scores = self.reranker.score(query, [f"{h['section']}\n{h['text']}" for h in hits])
+        ranked = sorted(zip(hits, scores), key=lambda x: x[1], reverse=True)[:k]
+        return [{**h, "rerank": s} for h, s in ranked]
 
     def lookup(self, codes, zones, per_card=3, per_zone=4):
         """Trae directamente las fichas (O##) y zonas (Z#) sobre las que se profundiza."""

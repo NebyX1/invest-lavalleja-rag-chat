@@ -11,7 +11,7 @@ Guía para levantar **Gianna** desde cero en cualquier máquina.
 | Clave de Ollama Cloud | – | Crear en <https://ollama.com/settings/keys> |
 | Documento de la guía | `.docx` | Ver paso 3 |
 
-No hace falta GPU. La primera ejecución descarga el modelo de embeddings (~220 MB) y necesita conexión a internet.
+No hace falta GPU. La primera ejecución descarga el modelo de embeddings (~220 MB) y, al arrancar el servidor, el reranker (~118 MB); ambos necesitan conexión a internet y quedan en `backend/.model_cache/`.
 
 ## Inicio rápido
 
@@ -126,6 +126,14 @@ npm run dev        # http://localhost:5173, con proxy /api → 8010
 
 La salida muestra el estado, las herramientas usadas y la respuesta.
 
+**Reranker (segunda oportunidad del agente):** viene activado y no requiere configuración ni variables de entorno. Usa `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (multilingüe, con español) en ONNX cuantizado y CPU, y el LLM lo invoca con la herramienta `buscar_guia_reranker` cuando la primera búsqueda no alcanza. El modelo se descarga en el primer arranque del servidor, así que ese arranque tarda más. Para probarlo, con el servidor levantado:
+
+```bash
+.venv/bin/python scripts/ask.py "¿Qué permisos necesito para una cámara de frío?"
+```
+
+Si el LLM lo usó, la salida lista `búsqueda refinada con reranker` entre las herramientas y el servidor imprime la llamada en `tools:`. Para cambiar de modelo, editar `RERANK_MODEL` y `RERANK_FILE` en `backend/config.py` (debe ser un cross-encoder con ONNX y `tokenizer.json`; ver la sección 5.2 de [Arquitectura.md](Arquitectura.md)).
+
 **Cambiar de puerto:** editá `--port` en `start.ps1` / `start.sh`. Si usás el modo desarrollo del frontend, ajustá también el proxy en `frontend/vite.config.js`.
 
 ## Solución de problemas
@@ -138,6 +146,8 @@ La salida muestra el estado, las herramientas usadas y la respuesta.
 | `FileNotFoundError: index/chunks.json` al arrancar | Falta ejecutar la ingesta (`setup`) |
 | Error de puerto en uso | Cambiá el puerto de `start.*` (el 8000 suele estar ocupado por otros servicios) |
 | Aviso de *symlinks* de Hugging Face en Windows | Inofensivo; el modelo se descarga igual |
+| El primer arranque del servidor tarda o parece colgado | Está descargando y precargando el reranker (~118 MB). Esperar a `Application startup complete`; los siguientes arranques son rápidos |
+| El reranker falla al cargar en ARM u otra arquitectura | Cambiar `RERANK_FILE` en `backend/config.py` por otra variante ONNX del mismo modelo (p. ej. `onnx/model_qint8_arm64.onnx`) |
 | `pip` termina con código 1 por un aviso de actualización | Inofensivo; es un aviso de versión de pip |
 | Respuestas viejas en el navegador tras actualizar | Usá "Nueva conversación" o recargá con `Ctrl+F5` |
 

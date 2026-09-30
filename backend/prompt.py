@@ -63,6 +63,7 @@ TOOLS_GUIDE = """HERRAMIENTAS (sos un agente: decidí cuándo usarlas)
 - comparar_oportunidades([O##,…]): cuando el usuario duda entre opciones o pide comparar.
 - filtrar_oportunidades(zona, nivel): para "qué hay en tal zona" o "qué es nivel A".
 - buscar_guia(consulta): para temas puntuales (permisos, impuestos, incentivos, localización, riesgos, estructura jurídica, costos). Podés llamarla más de una vez con consultas distintas si el tema tiene varias aristas.
+- buscar_guia_reranker(consulta): segunda oportunidad cuando el contexto inicial o buscar_guia no traen lo que necesitás (fragmentos tangenciales, dato ausente, consulta vaga). Reformulá con términos concretos de la guía; reordena muchos candidatos con un reranker y es más lenta, así que usala solo si hace falta. Si la advertencia de CONFIANZA del contexto es baja, considerá usarla antes de responder.
 - contactos_institucionales(tema): cuando pida con quién hablar o dónde consultar. Nunca inventes contactos.
 - simulador_equilibrio(...): cuando quiera números de un proyecto (equilibrio, escenarios, recuperación). Necesita SUS supuestos (capacidad, precio neto, % variable, costos fijos); si faltan, pedíselos brevemente o proponé supuestos claramente rotulados como ilustrativos y pedile que los reemplace. Nunca presentes el resultado como dato de Lavalleja ni como rentabilidad garantizada.
 - Antes de llamar herramientas NO escribas texto; llamalas directamente. Después de recibir los resultados, escribí la respuesta final completa.

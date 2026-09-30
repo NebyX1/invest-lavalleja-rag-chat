@@ -15,6 +15,7 @@ CATALOG_LINE = re.compile(r"^- (O\d\d) ([^|]+?) \| zonas: ([^|]+?) \| nivel (\w)
 
 TOOL_LABELS = {
     "buscar_guia": "búsqueda en la guía",
+    "buscar_guia_reranker": "búsqueda refinada con reranker",
     "ver_ficha": "ficha de oportunidad",
     "ver_zona": "detalle de zona",
     "filtrar_oportunidades": "filtro de oportunidades",
@@ -51,6 +52,15 @@ def build_tools(rt: Retriever, overview: str):
         por el contexto inicial: permisos, impuestos, incentivos, localización, riesgos, casos, estructura jurídica,
         costos, etc. La consulta debe ser autosuficiente y específica, en español."""
         hits = rt.search_multi(consulta, 6)
+        return _join(hits, 6000) or "Sin resultados."
+
+    @tool
+    def buscar_guia_reranker(consulta: str) -> str:
+        """Segunda oportunidad de búsqueda: recupera muchos candidatos y los reordena con un reranker cross-encoder
+        multilingüe (CPU). Usala cuando el CONTEXTO INICIAL o buscar_guia no respondan bien la pregunta (fragmentos
+        tangenciales, dato que falta, consulta vaga o con otras palabras que la guía). Reformulá la consulta con
+        términos concretos de la guía, en español."""
+        hits = rt.rerank(consulta, 5)
         return _join(hits, 6000) or "Sin resultados."
 
     @tool
@@ -151,6 +161,6 @@ def build_tools(rt: Retriever, overview: str):
         return txt + "\nEjercicio con supuestos del usuario; no es una valuación ni un dato observado de Lavalleja."
 
     return [
-        buscar_guia, ver_ficha, ver_zona, filtrar_oportunidades,
+        buscar_guia, buscar_guia_reranker, ver_ficha, ver_zona, filtrar_oportunidades,
         comparar_oportunidades, contactos_institucionales, simulador_equilibrio,
     ]
