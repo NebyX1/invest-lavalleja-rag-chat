@@ -64,8 +64,8 @@ chmod +x setup.sh start.sh
 
 El script hace, en orden:
 
-1. Crea el entorno virtual `.venv` e instala `backend/requirements.txt`.
-2. Ejecuta `backend/ingest.py`: lee el `.docx`, genera los chunks, calcula los embeddings y el catálogo (`backend/index/`).
+1. Crea el entorno virtual `.venv` e instala `backend/requirements.txt` (incluye LanceDB).
+2. Ejecuta `backend/ingest.py`: lee el `.docx`, genera los chunks, calcula los embeddings y el catálogo, y crea la tabla LanceDB (`backend/index/`).
 3. Instala las dependencias del frontend y lo compila (`frontend/dist/`).
 
 ### 5. Arrancar
@@ -103,10 +103,13 @@ cd backend && ../.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 80
 | `OLLAMA_MODEL` | Sí | – | Modelo (con o sin `:cloud`) |
 | `OLLAMA_HOST` | No | `https://ollama.com` | Endpoint de Ollama |
 | `TOP_K` | No | `8` | Fragmentos recuperados por consulta |
+| `VECTOR_BACKEND` | No | `lancedb` | `lancedb` (en disco) o `numpy` (todo en memoria) |
 
 ## Tareas habituales
 
 **Actualizar el documento:** reemplazá el `.docx`, ejecutá `cd backend && ../.venv/bin/python ingest.py` y reiniciá el servidor.
+
+**Cambiar el almacén vectorial:** el modo por defecto es LanceDB. Para usar la alternativa en memoria, agregá `VECTOR_BACKEND=numpy` al `.env` y reiniciá (no requiere reindexar). Para comparar ambos: `python scripts/compare_backends.py`.
 
 **Desarrollar el frontend con recarga en caliente:** con el backend corriendo en el puerto 8010,
 

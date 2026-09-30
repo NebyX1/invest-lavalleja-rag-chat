@@ -9,7 +9,7 @@ from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from config import DOCX_PATH, EMBED_MODEL, INDEX_DIR, MODEL_CACHE
+from config import DOCX_PATH, EMBED_MODEL, INDEX_DIR, MODEL_CACHE, VECTOR_BACKEND
 
 CHUNK_TARGET = 900  # caracteres por chunk (aprox. 200-250 tokens)
 CHUNK_MAX = 1400
@@ -125,7 +125,19 @@ def build_chunks(path: Path):
             carry = f"{crumb.split(' > ')[-1]}: {text}"
             continue
         for part in split_text(text):
-            chunks.append({"id": len(chunks), "section": crumb or "Introducción", "text": part})
+            crumbs = crumb.split(" > ")
+            zone = re.match(r"(Z\d) /", crumbs[0])
+            card = next((m.group(1) for p in crumbs if (m := re.match(r"(O\d\d) ·", p))), "")
+            chunks.append(
+                {
+                    "id": len(chunks),
+                    "section": crumb or "Introducción",
+                    "text": part,
+                    "zone": zone.group(1) if zone else "",
+                    "card": card,
+                    "doc": path.stem,
+                }
+            )
     return chunks
 
 
@@ -169,6 +181,11 @@ def main():
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
     np.save(INDEX_DIR / "embeddings.npy", emb.astype(np.float16))
     (INDEX_DIR / "chunks.json").write_text(json.dumps(chunks, ensure_ascii=False), encoding="utf-8")
+    if VECTOR_BACKEND == "lancedb":
+        from store import LanceBackend
+
+        LanceBackend.build(chunks, emb)
+        print("Índice LanceDB creado")
     overview = build_overview(chunks)
     (INDEX_DIR / "overview.txt").write_text(overview, encoding="utf-8")
     print(f"Catálogo: {overview.count(chr(10))} líneas")

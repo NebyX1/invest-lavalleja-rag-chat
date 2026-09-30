@@ -19,3 +19,5 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "https://ollama.com").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "").removesuffix(":cloud")
 
 TOP_K = int(os.getenv("TOP_K", "8"))
+# "lancedb" (en disco, por defecto) o "numpy" (todo en memoria, sin dependencias extra)
+VECTOR_BACKEND = os.getenv("VECTOR_BACKEND", "lancedb").strip().lower()

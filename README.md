@@ -1,6 +1,6 @@
 # Gianna · Asesora de inversiones de Invest Lavalleja
 
-Chat de inversiones con **RAG y agente**: Gianna orienta a inversores y emprendedores que evalúan instalar un proyecto en el departamento de Lavalleja (Uruguay), a partir de la *Guía de Inversiones 2026*. Corre 100 % en CPU (~650 MB de RAM) y usa Ollama Cloud para el modelo.
+Chat de inversiones con **RAG y agente**: Gianna orienta a inversores y emprendedores que evalúan instalar un proyecto en el departamento de Lavalleja (Uruguay), a partir de la *Guía de Inversiones 2026*. Corre 100 % en CPU (~720 MB de RAM), guarda el conocimiento en LanceDB embebido (sin servidor) y usa Ollama Cloud para el modelo.
 
 ## Qué hace
 
@@ -16,9 +16,9 @@ flowchart LR
     U[React + Vite] <-->|SSE| API[FastAPI]
     API --> AG[Agente LangGraph]
     AG <--> LLM[Ollama Cloud]
-    AG --> RT[Recuperación híbrida<br/>embeddings + BM25]
+    AG --> RT[Recuperación híbrida<br/>embeddings + texto + RRF]
     AG --> TL[Herramientas]
-    RT --> IDX[(Índice local<br/>155 chunks)]
+    RT --> IDX[(LanceDB<br/>155 chunks)]
     DOC[[Guía .docx]] -. ingesta .-> IDX
 ```
 
@@ -28,7 +28,7 @@ flowchart LR
 
 ## Tecnologías
 
-FastAPI · LangGraph · Ollama Cloud · FastEmbed (ONNX) · NumPy · BM25 · React · Vite · Tailwind 4 · daisyUI 5.
+FastAPI · LangGraph · Ollama Cloud · LanceDB · FastEmbed (ONNX) · React · Vite · Tailwind 4 · daisyUI 5.
 
 ## Inicio rápido
 
