@@ -1,0 +1,7 @@
+# docker compose --env-file .env --env-file backend/.env -f compose.yaml -f compose.local.yaml up --build -d
+services:
+  gianna:
+    ports:
+      - "127.0.0.1:8010:8010"
+    environment:
+      ADMIN_COOKIE_SECURE: "false"

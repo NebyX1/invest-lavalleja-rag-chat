@@ -63,9 +63,9 @@ class Reranker:
 
 
 class Retriever:
-    def __init__(self):
-        self.chunks = json.loads((INDEX_DIR / "chunks.json").read_text(encoding="utf-8"))
-        self.backend = make_backend(VECTOR_BACKEND, self.chunks)
+    def __init__(self, index_dir=INDEX_DIR, model=None, reranker=None):
+        self.chunks = json.loads((index_dir / "chunks.json").read_text(encoding="utf-8"))
+        self.backend = make_backend(VECTOR_BACKEND, self.chunks, index_dir)
         self.cards: dict[str, list[int]] = {}
         self.zones: dict[str, list[int]] = {}
         for c in self.chunks:
@@ -77,10 +77,10 @@ class Retriever:
                 self.zones.setdefault(m.group(1), []).append(c["id"])
         from fastembed import TextEmbedding
 
-        self.model = TextEmbedding(EMBED_MODEL, cache_dir=str(MODEL_CACHE), threads=2)
+        self.model = model if model is not None else TextEmbedding(EMBED_MODEL, cache_dir=str(MODEL_CACHE), threads=2)
         self._embed = lru_cache(maxsize=256)(self._embed_uncached)
         self._embed("warmup")
-        self.reranker = Reranker()
+        self.reranker = reranker if reranker is not None else Reranker()
 
     def _embed_uncached(self, text: str):
         v = np.array(next(iter(self.model.embed([text]))), dtype=np.float32)

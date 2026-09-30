@@ -107,7 +107,7 @@ cd backend && ../.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 80
 
 ## Tareas habituales
 
-**Actualizar el documento:** reemplazá el `.docx`, ejecutá `cd backend && ../.venv/bin/python ingest.py` y reiniciá el servidor.
+**Actualizar el documento:** después del primer arranque del panel, usá `/admin` para cargar o reemplazar fuentes. La actualización se activa sin reiniciar después de validar el índice. La ingesta por consola prepara el índice inicial de una instalación que todavía no tiene versiones administradas. Ver [Admin-y-Coolify.md](Admin-y-Coolify.md).
 
 **Cambiar el almacén vectorial:** el modo por defecto es LanceDB. Para usar la alternativa en memoria, agregá `VECTOR_BACKEND=numpy` al `.env` y reiniciá (no requiere reindexar). Para comparar ambos: `python scripts/compare_backends.py`.
 

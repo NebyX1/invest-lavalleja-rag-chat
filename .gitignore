@@ -8,11 +8,14 @@
 node_modules/
 __pycache__/
 *.pyc
+.pytest_cache/
 
 # Artefactos generados (se recrean con setup)
 frontend/dist/
 backend/index/
 backend/.model_cache/
+backend/admin-data/
+backend/venv/
 
 # Documento fuente: contiene anexos internos, se coloca localmente
 rag-data/*

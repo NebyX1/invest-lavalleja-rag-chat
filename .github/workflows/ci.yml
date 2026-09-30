@@ -1,0 +1,40 @@
+name: Validate app and container
+on:
+  push:
+  pull_request:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - run: pip install -r backend/requirements-dev.txt
+      - run: python -m pytest -q tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: frontend
+      - run: docker build -t gianna-ci .
+      - name: Check empty installation and private admin API
+        shell: bash
+        run: |
+          docker run -d --name gianna-ci -p 127.0.0.1:8010:8010 \
+            -e OLLAMA_API_KEY=ci-placeholder -e OLLAMA_MODEL=ci-placeholder \
+            -e ADMIN_SECRET_KEY=ci-test-secret-with-at-least-32-characters \
+            gianna-ci
+          trap 'docker logs gianna-ci; docker rm -f gianna-ci' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8010/api/health; then break; fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:8010/admin >/dev/null
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8010/api/admin/knowledge)" = 401
+          test "$(curl --silent -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+            -d '{"messages":[{"role":"user","content":"Hola"}]}' http://127.0.0.1:8010/api/chat)" = 503

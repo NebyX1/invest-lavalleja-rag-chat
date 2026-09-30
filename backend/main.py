@@ -14,7 +14,12 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from pydantic import BaseModel, Field
 
 from advisor import find_focus
-from config import FRONTEND_DIST, INDEX_DIR, OLLAMA_API_KEY, OLLAMA_MODEL
+from config import ADMIN_DATA_DIR, FRONTEND_DIST, OLLAMA_API_KEY, OLLAMA_MODEL
+from admin_api import AdminHeaders, admin_router
+from admin_auth import AdminAuth
+from admin_db import AdminDB
+from admin_runtime import RuntimeLock
+from knowledge_admin import KnowledgeAdmin
 from graph import build_graph
 from rag import Retriever
 from tools import TOOL_LABELS
@@ -27,22 +32,59 @@ _hits: dict[str, deque] = defaultdict(deque)
 state: dict = {}
 
 
+class ChatStream(StreamingResponse):
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            state["inflight"] -= 1
+
+
+async def prepare_runtime(index_dir):
+    chunks = json.loads((index_dir / "chunks.json").read_text(encoding="utf-8"))
+    if not chunks:
+        return {"retriever": None, "graph": None, "titles": {}}
+    resources = state.get("resources", {})
+    retriever = await asyncio.to_thread(Retriever, index_dir, resources.get("model"), resources.get("reranker"))
+    await asyncio.to_thread(retriever.search, "verificación de la base", 1)
+    await asyncio.to_thread(retriever.reranker.score, "warmup", ["warmup"])
+    overview = (index_dir / "overview.txt").read_text(encoding="utf-8")
+    return {"retriever": retriever,
+            "titles": dict(re.findall(r"^- (O\d\d) ([^|]+?) \|", overview, re.M)),
+            "graph": build_graph(retriever, overview, state["http"]),
+            "resources": {"model": retriever.model, "reranker": retriever.reranker}}
+
+
+admin_db = AdminDB(ADMIN_DATA_DIR)
+admin_auth = AdminAuth(admin_db)
+knowledge = KnowledgeAdmin(admin_db, prepare_runtime, state)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not OLLAMA_API_KEY or not OLLAMA_MODEL:
         raise RuntimeError("Faltan OLLAMA_API_KEY u OLLAMA_MODEL en .env")
-    retriever = Retriever()
-    await asyncio.to_thread(retriever.reranker.score, "warmup", ["warmup"])  # evita la carga en el primer uso
-    overview = (INDEX_DIR / "overview.txt").read_text(encoding="utf-8")
-    state["retriever"] = retriever
-    state["titles"] = dict(re.findall(r"^- (O\d\d) ([^|]+?) \|", overview, re.M))
-    state["http"] = httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15))
-    state["graph"] = build_graph(retriever, overview, state["http"])
-    yield
-    await state["http"].aclose()
+    lock = RuntimeLock(ADMIN_DATA_DIR / "runtime.lock")
+    try:
+        knowledge.recover()
+        await asyncio.to_thread(knowledge.bootstrap_legacy)
+        state["http"] = httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15))
+        state["inflight"] = 0
+        state.update({"retriever": None, "graph": None, "titles": {}})
+        if index_dir := knowledge.active_path():
+            state.update(await prepare_runtime(index_dir))
+        state["revision"] = knowledge.active_id()
+        yield
+    finally:
+        await knowledge.close()
+        if state.get("http"):
+            await state["http"].aclose()
+        lock.close()
 
 
 app = FastAPI(title="Gianna - Invest Lavalleja", lifespan=lifespan)
+app.add_middleware(AdminHeaders)
+app.include_router(admin_router(admin_auth, knowledge, admin_db))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -85,14 +127,14 @@ def tool_status(tc: dict) -> str:
             return f"Profundizando en la guía: {str(a.get('consulta', ''))[:70]}…"
 
 
-def follow_ups(answer: str, p: dict) -> list[dict]:
+def follow_ups(answer: str, p: dict, titles=None) -> list[dict]:
     """Botones para seguir profundizando en las fichas que mencionó la respuesta."""
     if not answer:
         return []
     deep = p.get("intent") == "profundizar"
     codes = [c for c in find_focus(answer)[0] if not deep or c not in p.get("codes", [])]
     chips = [
-        {"label": f"Profundizar en {c} · {state['titles'].get(c, '')}".strip(" ·"),
+        {"label": f"Profundizar en {c} · {(state['titles'] if titles is None else titles).get(c, '')}".strip(" ·"),
          "text": f"Profundizame la oportunidad {c}: cómo entrar, cómo validarla y próximos pasos"}
         for c in codes[:3]
     ]
@@ -106,6 +148,9 @@ def follow_ups(answer: str, p: dict) -> list[dict]:
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, request: Request):
+    graph, titles = state.get("graph"), state.get("titles", {})
+    if graph is None:
+        raise HTTPException(503, "La base de conocimiento está vacía. El administrador debe activar un documento.")
     ip = request.client.host if request.client else "?"
     now = time.monotonic()
     q = _hits[ip]
@@ -123,13 +168,13 @@ async def chat(req: ChatRequest, request: Request):
 
     lc_msgs = [HumanMessage(m.content) if m.role == "user" else AIMessage(m.content) for m in msgs]
 
-    async def gen():
+    async def stream():
         yield sse("status", "Analizando tu consulta…")
         answer: list[str] = []
         used: list[str] = []
         p: dict = {}
         try:
-            async for mode, payload in state["graph"].astream(
+            async for mode, payload in graph.astream(
                 {"messages": lc_msgs}, config={"recursion_limit": 25}, stream_mode=["messages", "updates"]
             ):
                 if mode == "messages":
@@ -157,17 +202,20 @@ async def chat(req: ChatRequest, request: Request):
             return
         if used:
             yield sse("tools", list(dict.fromkeys(used)))
-        chips = follow_ups("".join(answer), p)
+        chips = follow_ups("".join(answer), p, titles)
         if chips:
             yield sse("suggest", chips)
         yield sse("done", "")
 
-    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    state["inflight"] += 1
+    return ChatStream(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "model": OLLAMA_MODEL, "chunks": len(state["retriever"].chunks)}
+    retriever = state.get("retriever")
+    return {"ok": True, "model": OLLAMA_MODEL, "chunks": len(retriever.chunks) if retriever else 0,
+            "knowledge_ready": retriever is not None}
 
 
 if FRONTEND_DIST.exists():

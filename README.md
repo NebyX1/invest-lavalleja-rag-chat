@@ -50,6 +50,7 @@ Detalles y solución de problemas en [Setup.md](Setup.md).
 
 - [Setup.md](Setup.md): instalación, variables de entorno y tareas habituales.
 - [Arquitectura.md](Arquitectura.md): diagramas, flujos, agente, herramientas, seguridad y decisiones de diseño.
+- [Admin-y-Coolify.md](Admin-y-Coolify.md): panel con doble factor, gestión de conocimiento, archivo JSONL y despliegue Docker/Coolify.
 
 ## Aviso
 

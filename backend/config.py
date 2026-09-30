@@ -5,10 +5,12 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
+load_dotenv(ROOT / "backend" / ".env")  # SMTP local; el entorno de Coolify tiene prioridad
 
 DOCX_PATH = ROOT / "rag-data" / "Invest_Lavalleja_Guia_de_Inversiones_2026.docx"
-INDEX_DIR = ROOT / "backend" / "index"
-MODEL_CACHE = ROOT / "backend" / ".model_cache"
+INDEX_DIR = Path(os.getenv("INDEX_DIR", str(ROOT / "backend" / "index")))
+MODEL_CACHE = Path(os.getenv("MODEL_CACHE", str(ROOT / "backend" / ".model_cache")))
+ADMIN_DATA_DIR = Path(os.getenv("ADMIN_DATA_DIR", str(ROOT / "backend" / "admin-data")))
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
 EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

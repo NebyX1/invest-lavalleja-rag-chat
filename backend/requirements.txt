@@ -10,3 +10,5 @@ langgraph
 langchain-core
 langchain-ollama
 lancedb
+argon2-cffi
+python-multipart

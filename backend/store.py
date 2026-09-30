@@ -31,8 +31,8 @@ class NumpyBackend:
 
     name = "numpy"
 
-    def __init__(self, chunks):
-        self.emb = np.load(INDEX_DIR / "embeddings.npy").astype(np.float32)
+    def __init__(self, chunks, index_dir=INDEX_DIR):
+        self.emb = np.load(index_dir / "embeddings.npy").astype(np.float32)
         self.bm25 = BM25([tokenize(f"{c['section']} {c['text']}") for c in chunks])
         self.meta = {f: np.array([c.get(f) or "" for c in chunks]) for f in FILTER_FIELDS}
 
@@ -60,22 +60,22 @@ class LanceBackend:
     name = "lancedb"
     ANN_MIN_ROWS = 20_000  # por debajo de esto la búsqueda exacta es más rápida que un índice ANN
 
-    def __init__(self, chunks=None):
+    def __init__(self, chunks=None, index_dir=INDEX_DIR):
         os.environ.setdefault("LANCE_LOG", "error")  # silencia avisos de deprecación por consulta
         import lancedb
 
-        db = lancedb.connect(str(INDEX_DIR / "lance"))
+        db = lancedb.connect(str(index_dir / "lance"))
         if TABLE not in db.table_names():
             raise RuntimeError("No existe el índice LanceDB: ejecutá backend/ingest.py (o el setup).")
         self.table = db.open_table(TABLE)
 
     @staticmethod
-    def build(chunks, emb):
+    def build(chunks, emb, index_dir=INDEX_DIR):
         os.environ.setdefault("LANCE_LOG", "error")
         import lancedb
         from lancedb.index import FTS
 
-        db = lancedb.connect(str(INDEX_DIR / "lance"))
+        db = lancedb.connect(str(index_dir / "lance"))
         rows = [
             {
                 "id": c["id"],
@@ -123,7 +123,7 @@ class LanceBackend:
         return {r["id"]: float(np.dot(r["vector"], qvec)) for r in rows}
 
 
-def make_backend(name: str, chunks):
+def make_backend(name: str, chunks, index_dir=INDEX_DIR):
     if name == "lancedb":
-        return LanceBackend(chunks)
-    return NumpyBackend(chunks)
+        return LanceBackend(chunks, index_dir)
+    return NumpyBackend(chunks, index_dir)
