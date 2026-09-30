@@ -14,15 +14,15 @@ Chat de inversiones con **RAG y agente**: Gianna orienta a inversores y emprende
 
 ```mermaid
 flowchart LR
-    U[React + Vite] <-->|SSE| API[FastAPI]
-    API --> AG[Agente LangGraph]
-    AG <--> LLM[Ollama Cloud]
-    AG --> RT[Recuperación híbrida<br/>embeddings + texto + RRF]
-    AG --> TL[Herramientas]
-    TL -->|segunda oportunidad| RR[Reranker<br/>cross-encoder ONNX]
+    U["Cliente<br/>React 19 · Vite<br/>Tailwind 4 · daisyUI 5"] <-->|"POST + SSE<br/>fetch + ReadableStream"| API["API<br/>FastAPI · Uvicorn<br/>Pydantic"]
+    API --> AG["Agente<br/>LangGraph<br/>langchain-ollama"]
+    AG <-->|"HTTPS<br/>tool calling"| LLM["LLM<br/>Ollama Cloud<br/>(modelo en .env)"]
+    AG --> RT["Recuperación híbrida<br/>FastEmbed ONNX (MiniLM)<br/>FTS en español · RRF"]
+    AG --> TL["Herramientas<br/>langchain-core"]
+    TL -->|segunda oportunidad| RR["Reranker<br/>mmarco-mMiniLMv2<br/>ONNX cuantizado · CPU"]
     RR --> RT
-    RT --> IDX[(LanceDB<br/>155 chunks)]
-    DOC[[Guía .docx]] -. ingesta .-> IDX
+    RT --> IDX[("Índice<br/>LanceDB embebido<br/>155 chunks")]
+    DOC[["Guía .docx"]] -. "ingesta<br/>python-docx · FastEmbed" .-> IDX
 ```
 
 1. **Ingesta:** el `.docx` se convierte en fragmentos con su ruta de títulos, se calculan los embeddings y se genera un catálogo de zonas y oportunidades. Los anexos internos se excluyen.

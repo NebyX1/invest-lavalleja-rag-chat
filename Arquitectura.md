@@ -33,20 +33,20 @@ Un chat RAG que actúe como **asesora de inversiones** (no como buscador), con e
 ```mermaid
 flowchart LR
     subgraph Cliente
-        UI[React + Vite<br/>Tailwind / daisyUI]
+        UI["React 19 · Vite<br/>Tailwind 4 · daisyUI 5<br/>react-markdown"]
     end
-    subgraph Servidor["Servidor (FastAPI, un solo proceso)"]
-        API["/api/chat<br/>SSE"]
-        AG[Agente LangGraph]
-        RT[Retriever híbrido<br/>denso + texto + RRF]
-        RR[Reranker<br/>cross-encoder ONNX]
-        TL[Herramientas]
-        IDX[(LanceDB<br/>chunks.json<br/>overview.txt)]
+    subgraph Servidor["Servidor (un solo proceso)"]
+        API["FastAPI · Uvicorn<br/>/api/chat · SSE<br/>Pydantic"]
+        AG["Agente<br/>LangGraph<br/>langchain-ollama"]
+        RT["Retriever híbrido<br/>FastEmbed ONNX (MiniLM)<br/>FTS español · RRF"]
+        RR["Reranker<br/>mmarco-mMiniLMv2<br/>ONNX cuantizado · CPU"]
+        TL["Herramientas<br/>langchain-core"]
+        IDX[("LanceDB embebido<br/>chunks.json<br/>overview.txt")]
     end
     subgraph Nube
-        OL[Ollama Cloud<br/>LLM con tool calling]
+        OL["Ollama Cloud<br/>LLM con tool calling"]
     end
-    DOCX[[Guía .docx]] -. ingest.py .-> IDX
+    DOCX[["Guía .docx"]] -. "ingest.py<br/>python-docx · FastEmbed" .-> IDX
     UI <-->|POST + eventos SSE| API
     API --> AG
     AG --> RT
@@ -66,7 +66,7 @@ En producción, FastAPI también sirve el frontend compilado (`frontend/dist`), 
 
 ```mermaid
 flowchart TD
-    A[Guía .docx] --> B[Recorrido en orden del cuerpo<br/>párrafos + tablas]
+    A[Guía .docx] --> B["Recorrido en orden del cuerpo<br/>párrafos + tablas<br/>python-docx"]
     B --> C{Tipo de bloque}
     C -->|Etiqueta en mayúsculas<br/>Z1 / MINAS, 13 / INCENTIVOS| D[Nueva sección<br/>ANEXO INTERNO e ÍNDICE se omiten]
     C -->|Heading 1..n| E[Ruta de títulos<br/>breadcrumb]
@@ -74,9 +74,9 @@ flowchart TD
     C -->|Tabla| G[Filas → 'Columna: valor; …']
     D & E & F & G --> H[Secciones con breadcrumb]
     H --> I[Fusión de secciones diminutas<br/>y corte en chunks de ~900 caracteres]
-    I --> J[Embeddings MiniLM normalizados]
+    I --> J["Embeddings MiniLM normalizados<br/>FastEmbed · ONNX Runtime (CPU)"]
     I --> K[Catálogo compacto<br/>7 zonas + 16 fichas]
-    J --> L[(Tabla LanceDB<br/>vectores + texto + metadatos<br/>+ embeddings.npy de respaldo)]
+    J --> L[("Tabla LanceDB<br/>vectores + texto + metadatos<br/>+ embeddings.npy de respaldo<br/>LanceDB · NumPy")]
     I --> M[(chunks.json)]
     K --> N[(overview.txt)]
 ```
@@ -92,10 +92,10 @@ Decisiones relevantes:
 
 ```mermaid
 flowchart LR
-    Q[Consulta] --> X[Expansión de intención<br/>norte → Varela, Zapicán…<br/>impuestos → COMAP, IRAE…]
-    X --> D[Similitud coseno<br/>embeddings]
-    X --> B[Texto completo<br/>FTS en español con stemming<br/>(BM25 propio en modo numpy)]
-    D --> R[Fusión RRF k=60]
+    Q[Consulta] --> X["Expansión de intención<br/>regex → vocabulario de la guía<br/>norte → Varela, Zapicán…<br/>impuestos → COMAP, IRAE…"]
+    X --> D["Similitud coseno<br/>FastEmbed ONNX (MiniLM)<br/>LanceDB / NumPy"]
+    X --> B["Texto completo<br/>LanceDB FTS en español con stemming<br/>(BM25 propio en modo numpy)"]
+    D --> R["Fusión RRF k=60<br/>Python"]
     B --> R
     R --> T[Top-K chunks]
 ```
@@ -139,7 +139,7 @@ La búsqueda híbrida es rápida (~26 ms) pero ordena por similitud de vectores 
 flowchart LR
     Q[Consulta reformulada<br/>por el LLM] --> C[search_multi + search<br/>~24 candidatos únicos]
     C --> P[Pares consulta-fragmento]
-    P --> CE[Cross-encoder mMiniLM<br/>ONNX cuantizado, CPU]
+    P --> CE["Cross-encoder mMiniLM<br/>FastEmbed · onnxruntime<br/>ONNX cuantizado, CPU"]
     CE --> S[Sigmoide del logit<br/>puntaje 0-1]
     S --> T[Top-5 reordenado]
 ```
