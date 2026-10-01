@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { chatFetch, ensureSession, quotaFromResponse, QUOTA_KEY } from './chat-session.js'
 
 const STORAGE_KEY = 'gianna-chat-v1'
 const MAX_CHARS = 2000
@@ -18,19 +19,21 @@ const WELCOME =
 function loadHistory() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY))
-    return Array.isArray(saved) ? saved : []
+    return Array.isArray(saved) ? saved.filter((m) => m && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string').slice(-40) : []
   } catch {
     return []
   }
 }
 
-async function* streamChat(messages, signal) {
-  const res = await fetch('/api/chat', {
+async function* streamChat(messages, signal, onQuota) {
+  const res = await chatFetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })) }),
     signal,
   })
+  const quota = quotaFromResponse(res)
+  if (quota) onQuota(quota)
   if (!res.ok) {
     let detail = 'Ocurrió un error. Probá de nuevo.'
     try {
@@ -125,16 +128,67 @@ export default function App() {
   const [messages, setMessages] = useState(loadHistory)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [connectionError, setConnectionError] = useState('')
+  const [quota, setQuota] = useState({ remaining: 20, until: 0 })
+  const [now, setNow] = useState(Date.now())
+  const wait = Math.max(0, Math.ceil((quota.until - now) / 1000))
+  const blocked = !ready || wait > 0
   const abortRef = useRef(null)
   const endRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-40)))
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-40))) } catch { /* Modo privado sin almacenamiento. */ }
   }, [messages])
 
+  function updateQuota(result) {
+    const updated = Date.now()
+    setNow(updated)
+    const next = { remaining: result.remaining, until: result.retry_after ? updated + result.retry_after * 1000 : 0 }
+    setQuota(next)
+    try { localStorage.setItem(QUOTA_KEY, JSON.stringify(next)) } catch { /* Contador autoritativo en el backend. */ }
+  }
+
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    let active = true
+    let refreshing = false
+    async function refresh() {
+      if (refreshing) return
+      refreshing = true
+      try {
+        await ensureSession()
+        const response = await chatFetch('/api/chat/quota')
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.detail || 'No se pudo conectar con Gianna.')
+        if (active) { updateQuota(result); setReady(true); setConnectionError('') }
+      } catch (error) {
+        if (active) { setConnectionError(error.message); setReady(false) }
+      } finally { refreshing = false }
+    }
+    function onStorage(e) {
+      if (e.key === QUOTA_KEY && e.newValue) {
+        try { setQuota(JSON.parse(e.newValue)) } catch { /* Ignorar datos dañados. */ }
+      }
+    }
+    void refresh()
+    const timer = setInterval(refresh, 30000)
+    const clock = setInterval(() => setNow(Date.now()), 1000)
+    window.addEventListener('focus', refresh)
+    window.addEventListener('storage', onStorage)
+    return () => { active = false; clearInterval(timer); clearInterval(clock); window.removeEventListener('focus', refresh); window.removeEventListener('storage', onStorage) }
+  }, [])
+
+  useEffect(() => {
+    if (ready && quota.until && wait === 0) {
+      chatFetch('/api/chat/quota').then(async (response) => {
+        if (response.ok) updateQuota(await response.json())
+      }).catch(() => {})
+    }
+  }, [ready, quota.until, wait])
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'end' })
   }, [messages])
 
   const patchLast = (fn) =>
@@ -142,7 +196,7 @@ export default function App() {
 
   async function send(text) {
     const content = text.trim().slice(0, MAX_CHARS)
-    if (!content || busy) return
+    if (!content || busy || blocked) return
     const history = [...messages.filter((m) => !m.error), { role: 'user', content }]
     setMessages([...history, { role: 'assistant', content: '' }])
     setInput('')
@@ -150,7 +204,7 @@ export default function App() {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     try {
-      for await (const { event, data } of streamChat(history, ctrl.signal)) {
+      for await (const { event, data } of streamChat(history, ctrl.signal, updateQuota)) {
         if (event === 'token') patchLast((m) => ({ ...m, content: m.content + data }))
         else if (event === 'sources') patchLast((m) => ({ ...m, sources: data }))
         else if (event === 'status') patchLast((m) => ({ ...m, status: data }))
@@ -203,7 +257,7 @@ export default function App() {
           {messages.length === 0 && (
             <div className="mt-3 flex flex-wrap gap-2 pl-0 sm:pl-12">
               {SUGGESTIONS.map((s) => (
-                <button key={s} className="btn btn-outline btn-primary btn-sm h-auto py-1.5 font-normal" onClick={() => send(s)}>
+                <button key={s} className="btn btn-outline btn-primary btn-sm h-auto py-1.5 font-normal" onClick={() => send(s)} disabled={blocked}>
                   {s}
                 </button>
               ))}
@@ -215,7 +269,7 @@ export default function App() {
           {!busy && messages.at(-1)?.suggestions?.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-2 pl-0 sm:pl-12">
               {messages.at(-1).suggestions.map((s) => (
-                <button key={s.label} className="btn btn-outline btn-primary btn-sm h-auto py-1.5 font-normal" onClick={() => send(s.text)}>
+                <button key={s.label} className="btn btn-outline btn-primary btn-sm h-auto py-1.5 font-normal" onClick={() => send(s.text)} disabled={blocked}>
                   {s.label}
                 </button>
               ))}
@@ -238,6 +292,7 @@ export default function App() {
             className="textarea textarea-bordered max-h-40 min-h-12 flex-1 resize-none"
             rows={1}
             maxLength={MAX_CHARS}
+            disabled={!ready}
             placeholder="Escribí tu consulta sobre inversiones en Lavalleja…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -249,11 +304,16 @@ export default function App() {
               Detener
             </button>
           ) : (
-            <button type="submit" className="btn btn-primary" disabled={!input.trim()}>
+            <button type="submit" className="btn btn-primary" disabled={!input.trim() || blocked}>
               Enviar
             </button>
           )}
         </form>
+        <p className="mx-auto mt-2 max-w-3xl text-center text-sm" role="status" aria-live="polite">
+          {connectionError || (!ready ? 'Conectando con Gianna…' : wait > 0
+            ? `Alcanzaste las 20 consultas. Podés continuar en ${Math.floor(wait / 60)}:${String(wait % 60).padStart(2, '0')}.`
+            : `${quota.remaining} consultas disponibles. Al agotar el cupo, la espera es de 10 minutos.`)}
+        </p>
         <p className="mx-auto mt-2 max-w-3xl text-center text-xs opacity-60">
           Gianna orienta con información de la Guía de Inversiones 2026; no constituye asesoramiento financiero,
           legal ni una habilitación. Confirmá cada caso con el equipo de Invest Lavalleja.

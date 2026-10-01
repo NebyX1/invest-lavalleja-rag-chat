@@ -61,7 +61,6 @@ def build_graph(retriever: Retriever, overview: str, http_client):
         p = await plan(http_client, OLLAMA_HOST, OLLAMA_API_KEY, OLLAMA_MODEL, turns)
         k = TOP_K + 4 if p["intent"] == "profundizar" else TOP_K
         hits = await asyncio.to_thread(retriever.gather, p["queries"], p["codes"], p["zones"], k)
-        print(f"plan: {p['intent']}/{p['depth']} codes={p['codes']} zones={p['zones']} q={p['queries']}")
         return {
             "profile": p["profile"],
             "mode": MODES[p["intent"]],

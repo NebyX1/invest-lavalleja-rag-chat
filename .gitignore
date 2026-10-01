@@ -18,8 +18,8 @@ backend/admin-data/
 backend/venv/
 
 # Documento fuente: contiene anexos internos, se coloca localmente
-rag-data/*
-!rag-data/.gitkeep
+backend/rag-data/*
+!backend/rag-data/.gitkeep
 
 # Varios
 *.log

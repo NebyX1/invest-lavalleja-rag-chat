@@ -37,3 +37,90 @@
 
 @keyframes blink { 50% { opacity: 0; } }
 .cursor::after { content: "▍"; margin-left: 2px; animation: blink 1s steps(1) infinite; }
+
+/* Optional portal skin. The standalone chat and admin keep the Lavalleja theme. */
+@plugin "daisyui/theme" {
+  name: "invest";
+  default: false;
+  color-scheme: dark;
+  --color-base-100: #081b18;
+  --color-base-200: #102a26;
+  --color-base-300: #28433a;
+  --color-base-content: #f2f5ed;
+  --color-primary: #b6f4c7;
+  --color-primary-content: #04110f;
+  --color-secondary: #dcc394;
+  --color-secondary-content: #04110f;
+  --color-accent: #c0b7f4;
+  --color-accent-content: #04110f;
+  --color-neutral: #163831;
+  --color-neutral-content: #f2f5ed;
+  --color-info: #a5ceef;
+  --color-success: #b6f4c7;
+  --color-warning: #dcc394;
+  --color-error: #f4aaaa;
+  --color-error-content: #301111;
+  --radius-selector: 0.625rem;
+  --radius-field: 0.75rem;
+  --radius-box: 0.9375rem;
+}
+
+[data-theme="invest"] {
+  font-family: Arial, Helvetica, system-ui, sans-serif;
+}
+[data-theme="invest"] #root > div {
+  background: linear-gradient(150deg, #102a26, #081b18);
+}
+[data-theme="invest"] .navbar {
+  gap: 12px;
+  padding: 17px 22px;
+  background: transparent;
+}
+[data-theme="invest"] .avatar > div { border-radius: 12px; }
+[data-theme="invest"] .chat-bubble {
+  border: 1px solid rgba(214, 243, 225, .17);
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+  font-size: .92rem;
+}
+[data-theme="invest"] .chat-bubble::before { display: none; }
+[data-theme="invest"] .chat-bubble-primary {
+  color: #f2f5ed;
+  background: rgba(182, 244, 199, .13);
+}
+[data-theme="invest"] .btn-ghost {
+  border: 1px solid rgba(214, 243, 225, .17);
+}
+[data-theme="invest"] .btn-outline {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  color: #f2f5ed;
+  border-color: rgba(214, 243, 225, .25);
+  background: rgba(182, 244, 199, .07);
+  font-size: .78rem;
+}
+[data-theme="invest"] .btn { min-height: 44px; }
+[data-theme="invest"] .btn-outline:hover { border-color: #b6f4c7; }
+[data-theme="invest"] footer { background: transparent; }
+[data-theme="invest"] textarea {
+  min-width: 0;
+  min-height: 60px;
+  color: #f2f5ed;
+  background: rgba(4, 17, 15, .8);
+  font-size: .875rem;
+}
+[data-theme="invest"] textarea::placeholder { color: #afc4ba; }
+[data-theme="invest"] :focus-visible {
+  outline: 3px solid #c0b7f4;
+  outline-offset: 3px;
+}
+@media (max-width: 480px) {
+  [data-theme="invest"] .navbar { flex-wrap: wrap; padding: 15px; }
+  [data-theme="invest"] .navbar > .flex { flex-basis: 100%; }
+  [data-theme="invest"] .navbar > .btn { margin-left: 50px; }
+  [data-theme="invest"] footer .btn { padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="invest"] .cursor::after { animation: none; }
+}

@@ -73,5 +73,5 @@ async def plan(client: httpx.AsyncClient, host: str, key: str, model: str, msgs)
         raw = json.loads(text[text.index("{") : text.rindex("}") + 1])
         return _clean(raw, msgs)
     except Exception as e:  # noqa: BLE001
-        print("Planner falló, uso heurística:", e)
+        print("Planner falló, uso heurística:", type(e).__name__)
         return fallback_plan(msgs)

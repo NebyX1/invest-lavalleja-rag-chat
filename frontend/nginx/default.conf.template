@@ -1,0 +1,63 @@
+map "$http_sec_fetch_dest:$http_sec_fetch_site" $portal_frame {
+    default 0;
+    "iframe:same-origin" 1;
+}
+map $http_referer $portal_referrer {
+    default 0;
+    ~^https?://[^/]+/gianna/?(\?.*)?$ 1;
+}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+    absolute_redirect off;
+    root /usr/share/nginx/html;
+    index index.html;
+    server_tokens off;
+    client_max_body_size 11m;
+    set_real_ip_from ${TRUSTED_PROXY_CIDR};
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;
+    resolver 127.0.0.11 valid=10s;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Content-Security-Policy "frame-ancestors 'self'" always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    gzip on;
+    gzip_vary on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    location = /health { access_log off; default_type text/plain; return 200 'OK'; }
+    location ^~ /api/ {
+        set $backend "${BACKEND_URL}";
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 180s;
+    }
+    location = /chat { return 302 /gianna/; }
+    location ^~ /chat/ { return 302 /gianna/; }
+    location = /_gianna { return 404; }
+    location ^~ /_gianna/ {
+        if ($portal_frame = 0) { return 404; }
+        if ($portal_referrer = 0) { return 404; }
+        expires -1;
+        try_files $uri $uri/ =404;
+    }
+    location = /admin { rewrite ^ /admin/ last; }
+    location ^~ /admin/ { expires -1; try_files $uri /admin/index.html; }
+    location ^~ /assets/ { expires 1y; try_files $uri =404; }
+    location ^~ /_astro/ { expires 1y; try_files $uri =404; }
+    location ~ /\. { return 404; }
+    location / { expires -1; try_files $uri $uri/ =404; }
+    error_page 404 /404.html;
+    location = /404.html { internal; }
+}

@@ -1,0 +1,55 @@
+services:
+  fixture:
+    image: python:3.14-slim-bookworm
+    command: ["python", "/fixture.py"]
+    volumes:
+      - ./fake_services.py:/fixture.py:ro
+    ports:
+      - "127.0.0.1:18011:11434"
+  backend:
+    image: invest-backend:production
+    environment:
+      OLLAMA_API_KEY: local-integration-placeholder
+      OLLAMA_MODEL: integration-fixture
+      OLLAMA_HOST: http://fixture:11434
+      ADMIN_SECRET_KEY: local-integration-secret-at-least-32-characters
+      ADMIN_COOKIE_SECURE: "false"
+      ADMIN_EMAIL: qa@example.test
+      ADMIN_PASSWORD: Local-integration-password-2026!
+      CORS_ORIGINS: http://127.0.0.1:18080,http://127.0.0.1:18082
+      ADMIN_ALLOWED_ORIGINS: http://127.0.0.1:18080,http://127.0.0.1:18082
+      MAIL_SERVER: fixture
+      MAIL_PORT: "1025"
+      MAIL_USE_TLS: "false"
+      MAIL_ALLOW_INSECURE: "true"
+      MAIL_DEFAULT_SENDER: QA <qa@example.test>
+      PROXY_TRUSTED_IPS: 172.30.19.0/24
+      INDEX_DIR: /knowledge
+    volumes:
+      - qa-admin:/data/admin
+      - qa-models:/data/models
+      - ../../index:/knowledge:ro
+    ports:
+      - "127.0.0.1:18010:8010"
+  frontend:
+    image: invest-frontend:production
+    environment:
+      BACKEND_URL: http://backend:8010
+    ports:
+      - "127.0.0.1:18080:80"
+  frontend-cors:
+    image: invest-frontend:cors-qa
+    environment:
+      BACKEND_URL: http://backend:8010
+    ports:
+      - "127.0.0.1:18082:80"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.19.0/24
+volumes:
+  qa-admin:
+  qa-models:
+    external: true
+    name: invest-qa-models

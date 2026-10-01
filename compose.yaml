@@ -1,40 +1,4 @@
-services:
-  gianna:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    init: true
-    stop_grace_period: 30s
-    expose:
-      - "8010"
-    environment:
-      OLLAMA_API_KEY: ${OLLAMA_API_KEY:?Configurá OLLAMA_API_KEY}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:?Configurá OLLAMA_MODEL}
-      OLLAMA_HOST: ${OLLAMA_HOST:-https://ollama.com}
-      VECTOR_BACKEND: ${VECTOR_BACKEND:-lancedb}
-      TOP_K: ${TOP_K:-8}
-      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?Configurá ADMIN_SECRET_KEY}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-true}
-      ADMIN_ALLOWED_ORIGINS: ${ADMIN_ALLOWED_ORIGINS:-}
-      ADMIN_SESSION_HOURS: ${ADMIN_SESSION_HOURS:-8}
-      MAIL_SERVER: ${MAIL_SERVER:-}
-      MAIL_PORT: ${MAIL_PORT:-587}
-      MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
-      MAIL_USE_SSL: ${MAIL_USE_SSL:-false}
-      MAIL_USERNAME: ${MAIL_USERNAME:-}
-      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
-      MAIL_DEFAULT_SENDER: ${MAIL_DEFAULT_SENDER:-}
-      PROXY_TRUSTED_IPS: ${PROXY_TRUSTED_IPS:-127.0.0.1}
-    volumes:
-      - gianna-data:/data
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/api/health', timeout=4)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 300s
-volumes:
-  gianna-data:
+# Simulación de los dos recursos independientes de Coolify.
+include:
+  - path: backend/compose.yaml
+  - path: frontend/compose.yaml

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./admin.css";
+import { apiUrl } from "./api.js";
 
 const fmtDate = (value) =>
   new Intl.DateTimeFormat("es-UY", {
@@ -166,7 +167,7 @@ export default function Admin() {
   const fileInput = useRef(null);
 
   const getSession = useCallback(async () => {
-    const response = await fetch("/api/admin/session", { cache: "no-store" });
+    const response = await fetch(apiUrl("/api/admin/session"), { cache: "no-store", credentials: "include" });
     if (!response.ok) throw new Error("No se pudo conectar con el panel.");
     const result = await response.json();
     setSession(result);
@@ -176,9 +177,10 @@ export default function Admin() {
 
   const api = useCallback(
     async (path, options = {}) => {
-      const response = await fetch(`/api/admin${path}`, {
+      const response = await fetch(apiUrl(`/api/admin${path}`), {
         ...options,
         cache: "no-store",
+        credentials: "include",
         headers: {
           "X-CSRF-Token": session?.csrf || "",
           ...(options.body && !(options.body instanceof FormData)
@@ -474,7 +476,7 @@ export default function Admin() {
             <p className="ga-login-help">
               El acceso está reservado a administradores registrados.
             </p>
-            <a className="ga-back" href="/">
+            <a className="ga-back" href="/gianna/">
               ← Volver al chat de Gianna
             </a>
           </div>
@@ -508,7 +510,7 @@ export default function Admin() {
           ))}
         </nav>
         <div className="ga-sidebar-bottom">
-          <a href="/" target="_blank" rel="noreferrer">
+          <a href="/gianna/" target="_blank" rel="noreferrer">
             Abrir chat <Icon name="arrow" size={16} />
           </a>
           <div className="ga-account">
@@ -774,7 +776,7 @@ export default function Admin() {
                                 <td>
                                   <div className="ga-row-actions">
                                     <a
-                                      href={`/api/admin/knowledge/documents/${doc.id}/download`}
+                                      href={apiUrl(`/api/admin/knowledge/documents/${doc.id}/download`)}
                                       className="ga-icon-button"
                                       title="Descargar JSONL"
                                       aria-label={`Descargar ${doc.title}`}

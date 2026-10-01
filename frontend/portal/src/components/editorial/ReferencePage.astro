@@ -1,0 +1,39 @@
+---
+import ReferencePart from './ReferencePart.astro';
+import { catalog } from '../../data/site';
+import type { EditorialPage } from '../../types';
+
+interface Props { page: EditorialPage }
+const { page } = Astro.props;
+const isHome = page.path === '/';
+const brochureHref = '/documentos/folleto-invest-lavalleja.pdf';
+const brochureHeroAction = `<a class="btn brochure-hero-download" href="${brochureHref}" download="folleto-invest-lavalleja.pdf" aria-label="Descargar el folleto Invest Lavalleja 2026 en PDF">Descargar folleto PDF <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-download"></use></svg></a>`;
+const pageParts = page.parts.map((part, index) => {
+  if (!isHome || index !== 0 || part.type !== 'html') return part;
+
+  // Keep the promotional download in the existing hero actions without duplicating the editorial page markup.
+  const heroActionsEnd = '</div></div><div class="hero-aside">';
+  if (!part.content.includes(heroActionsEnd)) throw new Error('No se encontró el punto de inserción de la descarga del folleto en el hero.');
+  return { ...part, content: part.content.replace(heroActionsEnd, `${brochureHeroAction}${heroActionsEnd}`) };
+});
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@type': isHome ? 'WebSite' : 'WebPage',
+  name: page.title,
+  description: page.description,
+  ...(import.meta.env.PUBLIC_SITE_URL ? { url: new URL(page.path, import.meta.env.PUBLIC_SITE_URL).toString() } : {}),
+};
+---
+
+<main id="main" tabindex="-1" transition:animate="fade">
+  <script type="application/ld+json" set:html={JSON.stringify(structuredData)}></script>
+  {pageParts.map((part, index) => <>
+    <ReferencePart part={part} catalog={catalog} pagePath={page.path} />
+    {isHome && index === 0 && <section class="gianna-promo" aria-labelledby="gianna-promo-title">
+      <div class="wrap gianna-promo-inner">
+        <div><p class="eyebrow"><span class="dot" aria-hidden="true"></span> Conocé a Gianna</p><h2 id="gianna-promo-title">Tu proyecto empieza con una buena pregunta.</h2><p>Explorá actividades, zonas y pasos para invertir en Lavalleja con un asistente que muestra las fuentes de sus respuestas.</p></div>
+        <a class="btn primary" href="/gianna/">Preguntale a Gianna <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-up" /></svg></a>
+      </div>
+    </section>}
+  </>)}
+</main>

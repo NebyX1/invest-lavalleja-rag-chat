@@ -1,0 +1,35 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+import '../styles/gianna.css';
+---
+
+<SiteLayout
+  title="Gianna | Asistente de inversiones en Lavalleja"
+  description="Consultá la información publicada para explorar un proyecto de inversión en Lavalleja y revisar las fuentes de cada respuesta."
+  currentPath="/gianna/"
+>
+  <main id="main" tabindex="-1" class="gianna-page">
+    <div class="wrap">
+      <nav class="breadcrumbs" aria-label="Ruta de navegación"><a href="/">Inicio</a><span aria-hidden="true">/</span><span>Gianna</span></nav>
+      <div class="gianna-page-intro">
+        <p class="eyebrow"><span class="dot" aria-hidden="true"></span> Asistente de inversiones</p>
+        <h1>Conocé Lavalleja con Gianna.</h1>
+        <p>Preguntá por actividades, zonas y pasos para preparar tu proyecto. Gianna consulta la base de conocimiento publicada y muestra los fragmentos que respaldan cada respuesta.</p>
+      </div>
+      <aside class="gianna-scope" aria-label="Alcance del asistente">
+        <strong>Orientación para explorar, con fuentes a la vista.</strong>
+        <p>Las respuestas pueden estar incompletas o desactualizadas. No son asesoramiento financiero, legal ni una oferta de inversión. Confirmá condiciones y disponibilidad con las fuentes y organismos correspondientes antes de tomar decisiones.</p>
+        <div class="gianna-scope-links"><a href="/fuentes/">Ver fuentes editoriales</a><a href="/contacto/">Consultar vías de contacto</a></div>
+      </aside>
+      <section class="gianna-agent" aria-label="Conversación con Gianna">
+        <iframe
+          src="/_gianna/?theme=invest"
+          title="Conversación con Gianna, asesora de Invest Lavalleja"
+          class="gianna-agent-frame"
+        ></iframe>
+      </section>
+      <p class="gianna-agent-link">La conversación se guarda únicamente en este navegador. Cada IP y sesión dispone de 20 consultas; al agotarlas, la espera es de 10 minutos.</p>
+      <noscript><p>El chat necesita JavaScript. Podés seguir consultando las <a href="/fuentes/">fuentes</a> y preparar <a href="/tu-proyecto/">tu proyecto</a>.</p></noscript>
+    </div>
+  </main>
+</SiteLayout>

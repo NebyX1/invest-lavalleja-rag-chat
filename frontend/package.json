@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm --prefix portal run build && vite build && node scripts/assemble-frontend.mjs",
+    "build:chat": "vite build",
+    "dev:site": "npm --prefix portal run dev",
     "preview": "vite preview"
   },
   "dependencies": {

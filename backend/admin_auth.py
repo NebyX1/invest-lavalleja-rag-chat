@@ -73,6 +73,9 @@ class AdminAuth:
     def __init__(self, db, mailer=send_code, bootstrap=True):
         self.db, self.mailer = db, mailer
         self.secure = os.getenv("ADMIN_COOKIE_SECURE", "false").lower() == "true"
+        self.samesite = os.getenv("ADMIN_COOKIE_SAMESITE", "strict").lower()
+        if self.samesite not in ("strict", "lax", "none") or (self.samesite == "none" and not self.secure):
+            raise ValueError("ADMIN_COOKIE_SAMESITE inválido; none requiere HTTPS y ADMIN_COOKIE_SECURE=true.")
         self.ttl = int(os.getenv("ADMIN_SESSION_HOURS", "8")) * 3600
         if not 3600 <= self.ttl <= 86400:
             raise ValueError("ADMIN_SESSION_HOURS debe estar entre 1 y 24.")
@@ -88,6 +91,7 @@ class AdminAuth:
             secret = path.read_text(encoding="ascii").strip()
         self.secret = secret.encode()
         self.origins = {s.rstrip("/") for s in os.getenv("ADMIN_ALLOWED_ORIGINS", "").split(",") if s}
+        self.origins.update(s.strip().rstrip("/") for s in os.getenv("CORS_ORIGINS", "").split(",") if s.strip())
         if not self.secure:
             self.origins.update(("http://localhost:5173", "http://127.0.0.1:5173"))
         email, password = os.getenv("ADMIN_EMAIL"), os.getenv("ADMIN_PASSWORD")
@@ -121,7 +125,7 @@ class AdminAuth:
                           self.digest(hashed + ":" + code) if code else None, now + 600 if code else None,
                           now if code else 0))
         response.set_cookie(COOKIE, token, max_age=self.ttl if stage == "authenticated" else 600,
-                            secure=self.secure, httponly=True, samesite="strict", path="/api/admin")
+                            secure=self.secure, httponly=True, samesite=self.samesite, path="/api/admin")
         return {"stage": stage, "csrf": csrf}
 
     def session(self, request, required=False):
@@ -223,6 +227,6 @@ class AdminAuth:
         old = self.protect(request, False)
         with self.db.connect() as conn:
             conn.execute("DELETE FROM sessions WHERE token_hash=?", (old["token_hash"],))
-        response.delete_cookie(COOKIE, path="/api/admin", secure=self.secure, httponly=True, samesite="strict")
+        response.delete_cookie(COOKIE, path="/api/admin", secure=self.secure, httponly=True, samesite=self.samesite)
         self.db.audit(old["email"] or "anonymous", "logout")
         return {"ok": True}

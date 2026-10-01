@@ -6,7 +6,14 @@ import App from './App.jsx'
 const Admin = lazy(() => import('./Admin.jsx'))
 const isAdmin = /^\/admin(?:\/|$)/.test(window.location.pathname)
 
-createRoot(document.getElementById('root')).render(
+let inPortal = false
+try {
+  inPortal = window.parent !== window && window.parent.location.origin === window.location.origin &&
+    /^\/gianna\/?$/.test(window.parent.location.pathname)
+} catch { /* No se permite incrustar Gianna desde otro origen. */ }
+
+if (!isAdmin && !inPortal) window.location.replace('/gianna/')
+else createRoot(document.getElementById('root')).render(
   <StrictMode>
     {isAdmin ? <Suspense fallback={<div className="p-8">Cargando panel…</div>}><Admin /></Suspense> : <App />}
   </StrictMode>,

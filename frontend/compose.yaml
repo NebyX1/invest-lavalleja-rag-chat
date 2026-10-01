@@ -1,0 +1,16 @@
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE:-invest-frontend:production}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
+        PUBLIC_INDEXING: ${PUBLIC_INDEXING:-false}
+    restart: unless-stopped
+    expose:
+      - "80"
+    environment:
+      BACKEND_URL: ${BACKEND_URL:-http://backend:8010}
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR:-127.0.0.1/32}

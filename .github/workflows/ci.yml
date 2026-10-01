@@ -1,4 +1,4 @@
-name: Validate app and container
+name: Validate independent apps and containers
 on:
   push:
   pull_request:
@@ -13,28 +13,38 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.lock
       - run: pip install -r backend/requirements-dev.txt
-      - run: python -m pytest -q tests
+      - run: python -m pytest -q backend/tests
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci && npm run build
+          cache-dependency-path: |
+            frontend/package-lock.json
+            frontend/portal/package-lock.json
+      - run: npm ci && npm run check && npm run lint && npm run test && npm audit
+        working-directory: frontend/portal
+      - run: npm ci && npm run build && npm audit
         working-directory: frontend
-      - run: docker build -t gianna-ci .
-      - name: Check empty installation and private admin API
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend/portal
+      - run: docker build -t invest-backend:production backend
+      - run: docker build -t invest-frontend:production frontend
+      - run: python backend/scripts/smoke_container.py --image invest-backend:production
+      - name: Check frontend and backend on separate containers
+        env:
+          OLLAMA_API_KEY: ci-placeholder
+          OLLAMA_MODEL: ci-placeholder
+          ADMIN_SECRET_KEY: ci-test-secret-with-at-least-32-characters
         shell: bash
         run: |
-          docker run -d --name gianna-ci -p 127.0.0.1:8010:8010 \
-            -e OLLAMA_API_KEY=ci-placeholder -e OLLAMA_MODEL=ci-placeholder \
-            -e ADMIN_SECRET_KEY=ci-test-secret-with-at-least-32-characters \
-            gianna-ci
-          trap 'docker logs gianna-ci; docker rm -f gianna-ci' EXIT
+          docker compose -f compose.yaml -f compose.local.yaml up -d --no-build
+          trap 'docker compose -f compose.yaml -f compose.local.yaml logs --tail=20; docker compose -f compose.yaml -f compose.local.yaml down' EXIT
           for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:8010/api/health; then break; fi
+            if curl --fail --silent http://127.0.0.1:8080/api/health; then break; fi
             sleep 2
           done
-          curl --fail --silent http://127.0.0.1:8010/admin >/dev/null
-          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8010/api/admin/knowledge)" = 401
-          test "$(curl --silent -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
-            -d '{"messages":[{"role":"user","content":"Hola"}]}' http://127.0.0.1:8010/api/chat)" = 503
+          curl --fail --silent http://127.0.0.1:8080/health >/dev/null
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8010/admin)" = 404
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/admin/knowledge)" = 401
+          test "$(curl --silent -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/_gianna/)" = 404
+          PLAYWRIGHT_BASE_URL=http://127.0.0.1:8080 npm --prefix frontend/portal run test:e2e -- --workers=2

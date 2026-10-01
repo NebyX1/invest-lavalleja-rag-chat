@@ -1,7 +1,26 @@
-# docker compose --env-file .env --env-file backend/.env -f compose.yaml -f compose.local.yaml up --build -d
 services:
-  gianna:
+  frontend:
+    build:
+      args:
+        VITE_API_URL: ""
+        PUBLIC_SITE_URL: ""
+        PUBLIC_INDEXING: "false"
+    environment:
+      BACKEND_URL: http://backend:8010
+      TRUSTED_PROXY_CIDR: 127.0.0.1/32
+    ports:
+      - "127.0.0.1:8080:80"
+  backend:
     ports:
       - "127.0.0.1:8010:8010"
     environment:
       ADMIN_COOKIE_SECURE: "false"
+      ADMIN_COOKIE_SAMESITE: strict
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      ADMIN_ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      PROXY_TRUSTED_IPS: "172.30.18.0/24"
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: "172.30.18.0/24"

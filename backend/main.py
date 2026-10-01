@@ -1,20 +1,18 @@
 import asyncio
 import json
 import re
-import time
-from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from pydantic import BaseModel, Field
 
 from advisor import find_focus
-from config import ADMIN_DATA_DIR, FRONTEND_DIST, OLLAMA_API_KEY, OLLAMA_MODEL
+from config import ADMIN_DATA_DIR, CORS_ORIGINS, OLLAMA_API_KEY, OLLAMA_MODEL
+from chat_access import ChatAccess, BrowserSession
 from admin_api import AdminHeaders, admin_router
 from admin_auth import AdminAuth
 from admin_db import AdminDB
@@ -26,8 +24,6 @@ from tools import TOOL_LABELS
 
 MAX_MSG_CHARS = 2000
 MAX_HISTORY = 8
-RATE_LIMIT = 20  # mensajes por minuto por IP
-_hits: dict[str, deque] = defaultdict(deque)
 
 state: dict = {}
 
@@ -57,6 +53,7 @@ async def prepare_runtime(index_dir):
 
 admin_db = AdminDB(ADMIN_DATA_DIR)
 admin_auth = AdminAuth(admin_db)
+chat_access = ChatAccess(ADMIN_DATA_DIR, admin_auth.secret, CORS_ORIGINS)
 knowledge = KnowledgeAdmin(admin_db, prepare_runtime, state)
 
 
@@ -87,9 +84,11 @@ app.add_middleware(AdminHeaders)
 app.include_router(admin_router(admin_auth, knowledge, admin_db))
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_methods=["POST", "GET"],
-    allow_headers=["Content-Type"],
+    allow_origins=list(CORS_ORIGINS),
+    allow_credentials=True,
+    allow_methods=["POST", "GET", "DELETE"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "X-Chat-Session"],
+    expose_headers=["Retry-After", "X-Chat-Remaining", "X-Chat-Retry-After"],
 )
 
 
@@ -148,23 +147,17 @@ def follow_ups(answer: str, p: dict, titles=None) -> list[dict]:
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest, request: Request):
+    browser = chat_access.authorize(request)
     graph, titles = state.get("graph"), state.get("titles", {})
     if graph is None:
         raise HTTPException(503, "La base de conocimiento está vacía. El administrador debe activar un documento.")
-    ip = request.client.host if request.client else "?"
-    now = time.monotonic()
-    q = _hits[ip]
-    while q and now - q[0] > 60:
-        q.popleft()
-    if len(q) >= RATE_LIMIT:
-        raise HTTPException(429, "Demasiadas consultas, esperá un momento.")
-    q.append(now)
-
     msgs = req.messages[-MAX_HISTORY:]
     if msgs[-1].role != "user" or not msgs[-1].content.strip():
         raise HTTPException(400, "El último mensaje debe ser del usuario.")
     if len(msgs[-1].content) > MAX_MSG_CHARS:
         raise HTTPException(400, f"Máximo {MAX_MSG_CHARS} caracteres por mensaje.")
+
+    quota = await asyncio.to_thread(chat_access.quota, request.client.host if request.client else "?", browser, True)
 
     lc_msgs = [HumanMessage(m.content) if m.role == "user" else AIMessage(m.content) for m in msgs]
 
@@ -194,9 +187,8 @@ async def chat(req: ChatRequest, request: Request):
                         yield sse("reset", "")  # descarta el texto previo a la llamada de herramientas
                         yield sse("status", tool_status(calls[0]))
                         used += [TOOL_LABELS.get(c["name"], c["name"]) for c in calls]
-                        print("tools:", [(c["name"], c["args"]) for c in calls])
         except Exception as e:  # noqa: BLE001
-            print("Agent error:", repr(e))
+            print("Agent error:", type(e).__name__)  # Nunca registrar consultas ni respuestas.
             yield sse("error", "No pude conectarme con el modelo. Probá de nuevo en unos segundos.")
             yield sse("done", "")
             return
@@ -208,7 +200,22 @@ async def chat(req: ChatRequest, request: Request):
         yield sse("done", "")
 
     state["inflight"] += 1
-    return ChatStream(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return ChatStream(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no",
+        "X-Chat-Remaining": str(quota["remaining"]), "X-Chat-Retry-After": str(quota["retry_after"])})
+
+
+@app.post("/api/chat/session")
+def chat_session(body: BrowserSession, request: Request):
+    chat_access.origin(request)
+    ip = request.client.host if request.client else "?"
+    return {"token": chat_access.issue(body.browser_id, request.headers["origin"]),
+            **chat_access.quota(ip, str(body.browser_id))}
+
+
+@app.post("/api/chat/quota")
+def chat_quota(request: Request):
+    browser = chat_access.authorize(request)
+    return chat_access.quota(request.client.host if request.client else "?", browser)
 
 
 @app.get("/api/health")
@@ -216,14 +223,3 @@ def health():
     retriever = state.get("retriever")
     return {"ok": True, "model": OLLAMA_MODEL, "chunks": len(retriever.chunks) if retriever else 0,
             "knowledge_ready": retriever is not None}
-
-
-if FRONTEND_DIST.exists():
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
-
-    @app.get("/{path:path}")
-    def spa(path: str):
-        f = (FRONTEND_DIST / path).resolve()
-        if path and f.is_file() and FRONTEND_DIST.resolve() in f.parents:
-            return FileResponse(f)
-        return FileResponse(FRONTEND_DIST / "index.html")

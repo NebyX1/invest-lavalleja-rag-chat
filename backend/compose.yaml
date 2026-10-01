@@ -1,0 +1,27 @@
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-invest-backend:production}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    expose:
+      - "8010"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:?Configurá OLLAMA_API_KEY}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Configurá OLLAMA_MODEL}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?Configurá ADMIN_SECRET_KEY}
+      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-true}
+      ADMIN_COOKIE_SAMESITE: ${ADMIN_COOKIE_SAMESITE:-strict}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      ADMIN_ALLOWED_ORIGINS: ${ADMIN_ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      PROXY_TRUSTED_IPS: ${PROXY_TRUSTED_IPS:-127.0.0.1}
+    volumes:
+      - gianna-data:/data
+volumes:
+  gianna-data:

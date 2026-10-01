@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
-# Levanta API + frontend compilado en http://localhost:8010 (Linux/macOS).
-cd "$(dirname "$0")/backend"
-exec ../.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8010
+set -euo pipefail
+cd "$(dirname "$0")"
+docker compose --env-file backend/.env -f compose.yaml -f compose.local.yaml up -d
+echo 'Invest Lavalleja: http://localhost:8080/gianna/'
