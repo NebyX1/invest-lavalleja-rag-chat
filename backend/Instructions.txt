@@ -42,7 +42,8 @@ El backend utiliza ASGI, SQLite y migraciones SQL propias.
 El administrador gestiona conocimiento y su contraseña.
 El superadministrador también gestiona cuentas, roles y auditoría.
 El primer administrador debe ser superadministrador.
-Las contraseñas tienen entre 12 y 256 caracteres; el login siempre requiere 2FA por correo.
+Las contraseñas tienen entre 12 y 256 caracteres. El login requiere un captcha numérico
+validado en el backend y después 2FA por correo. El cálculo vence en cinco minutos.
 
 db upgrade y seed-data requieren que el backend esté detenido.
 Las migraciones conservan cuentas, sesiones, documentos y cupos existentes.

@@ -60,7 +60,7 @@ def send_code(email, code):
     if not parseaddr(sender)[1]:
         raise ValueError("Falta MAIL_DEFAULT_SENDER.")
     message = EmailMessage()
-    message["Subject"] = "Gianna · Código de acceso al panel"
+    message["Subject"] = "Invest Lavalleja · Código de acceso administrativo"
     message["From"] = sender
     message["To"] = email
     message.set_content(f"Tu código de acceso es: {code}\n\nVence en 10 minutos y puede usarse una sola vez.\nSi no solicitaste el acceso, ignorá este correo.")
@@ -137,7 +137,47 @@ class AdminAuth:
                           now if code else 0))
         response.set_cookie(COOKIE, token, max_age=self.ttl if stage == "authenticated" else 600,
                             secure=self.secure, httponly=True, samesite=self.samesite, path="/api/admin")
-        return {"stage": stage, "csrf": csrf}
+        result = {"stage": stage, "csrf": csrf}
+        if stage == "anonymous":
+            result["captcha"] = self.captcha({"token_hash": hashed})
+        return result
+
+    def captcha(self, session, refresh=False):
+        now = time.time()
+        with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM sessions WHERE token_hash=? AND expires>?",
+                               (session["token_hash"], now)).fetchone()
+            if not row:
+                raise HTTPException(401, "La sesión venció. Recargá el acceso.")
+            if row["stage"] != "anonymous":
+                raise HTTPException(400, "La verificación numérica corresponde al inicio de sesión.")
+            if refresh or not row["captcha_hash"] or row["captcha_expires"] <= now:
+                left, right = secrets.randbelow(10) + 1, secrets.randbelow(10) + 1
+                challenge_id = uuid.uuid4().hex
+                question = f"¿Cuánto es {left} + {right}?"
+                expires = min(now + 300, row["expires"])
+                encoded = self.digest(f"captcha:{row['token_hash']}:{challenge_id}:{left + right}")
+                conn.execute("UPDATE sessions SET captcha_id=?,captcha_question=?,captcha_hash=?,captcha_expires=? WHERE token_hash=?",
+                             (challenge_id, question, encoded, expires, row["token_hash"]))
+            else:
+                challenge_id, question, expires = row["captcha_id"], row["captcha_question"], row["captcha_expires"]
+        return {"id": challenge_id, "question": question, "expires_in": max(0, int(expires - now))}
+
+    def consume_captcha(self, session, challenge_id, answer):
+        valid = False
+        with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT * FROM sessions WHERE token_hash=? AND stage='anonymous' AND captcha_id=?",
+                               (session["token_hash"], challenge_id)).fetchone()
+            if row:
+                if row["expires"] > time.time() and row["captcha_expires"] > time.time() and row["captcha_hash"] and re.fullmatch(r"[0-9]{1,2}", answer):
+                    expected = self.digest(f"captcha:{row['token_hash']}:{challenge_id}:{int(answer)}")
+                    valid = hmac.compare_digest(row["captcha_hash"], expected)
+                # Consumir incluso una respuesta incorrecta; dos solicitudes no pueden reutilizarlo.
+                conn.execute("UPDATE sessions SET captcha_id=NULL,captcha_question=NULL,captcha_hash=NULL,captcha_expires=0 WHERE token_hash=?",
+                             (row["token_hash"],))
+        return valid
 
     def session(self, request, required=False, superadmin=False):
         token = request.cookies.get(COOKIE, "")
@@ -173,11 +213,13 @@ class AdminAuth:
                 raise HTTPException(429, "Demasiados intentos. Esperá antes de volver a ingresar.", headers={"Retry-After": str(window)})
             conn.execute("INSERT INTO limits(key,at) VALUES(?,?)", (key, now))
 
-    def login(self, request, response, email, password):
+    def login(self, request, response, email, password, captcha_id, captcha_answer):
         old = self.protect(request, False)
         ip = request.client.host if request.client else "?"
         self.limit("login-ip:" + ip, 5, 60)
         self.limit("login-email:" + email.strip().lower(), 10, 900)
+        if not self.consume_captcha(old, captcha_id, captcha_answer):
+            raise HTTPException(400, "La respuesta de seguridad es incorrecta o venció. Resolvé el nuevo cálculo.")
         with self.db.connect() as conn:
             user = conn.execute("SELECT * FROM users WHERE email=?", (email.strip().lower(),)).fetchone()
         verified = valid_password(user["password_hash"] if user else DUMMY_HASH, password)

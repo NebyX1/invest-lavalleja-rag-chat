@@ -30,8 +30,8 @@ def test_migrations_adopt_legacy_and_preserve_quotas(tmp_path):
     with sqlite3.connect(tmp_path / "chat-quota.sqlite3") as db:
         db.executescript((MIGRATIONS_DIR / "001_quota.sql").read_text())
         db.execute("INSERT INTO quotas VALUES('hashed-id',19,0,123)")
-    assert upgrade_all(tmp_path) == {"admin": 2, "quota": 1}
-    assert upgrade_all(tmp_path) == {"admin": 2, "quota": 1}
+    assert upgrade_all(tmp_path) == {"admin": 3, "quota": 1}
+    assert upgrade_all(tmp_path) == {"admin": 3, "quota": 1}
     with sqlite3.connect(tmp_path / "admin.sqlite3") as db:
         assert db.execute("SELECT name,is_superadmin,password_hash FROM users").fetchone() == (
             "legacy@example.test", 1, "existing-hash")
@@ -64,7 +64,7 @@ def test_failed_migration_rolls_back(tmp_path):
 def test_cli_migrate_seed_and_create_roles(tmp_path):
     result = command(tmp_path, "db", "upgrade", "-d", "migrations")
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == {"admin": 2, "quota": 1}
+    assert json.loads(result.stdout) == {"admin": 3, "quota": 1}
     password = "Only-for-cli-tests-2026!"
     for name, email, role in [("Responsable", "super@example.test", "true"), ("Editor", "editor@example.test", "false")]:
         result = command(tmp_path, "create-admin", name, email, password, role)
@@ -73,7 +73,7 @@ def test_cli_migrate_seed_and_create_roles(tmp_path):
     for _ in range(2):
         result = command(tmp_path, "seed-data")
         assert result.returncode == 0, result.stderr
-        assert json.loads(result.stdout) == {"versions": {"admin": 2, "quota": 1},
+        assert json.loads(result.stdout) == {"versions": {"admin": 3, "quota": 1},
                                             "admin_created": False, "knowledge_ready": False, "chunks": 0}
     with sqlite3.connect(tmp_path / "admin" / "admin.sqlite3") as db:
         assert db.execute("SELECT name,is_superadmin FROM users ORDER BY created").fetchall() == [

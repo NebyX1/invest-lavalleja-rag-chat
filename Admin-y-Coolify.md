@@ -48,7 +48,7 @@ La API comprueba el origen y la sesión firmada incluso cuando el navegador perm
 
 ## Administración
 
-`/admin/login` en el frontend conserva contraseña Argon2 y código por correo; después de verificar se accede a `/admin/`. Código válido durante 10 minutos, cinco intentos y un único uso. El reenvío espera un minuto y no reinicia intentos. Sesiones revocables de ocho horas por defecto, cookies HttpOnly y CSRF en escrituras.
+`/admin/login` identifica la Ventanilla Única de Inversiones de Lavalleja. Exige contraseña, captcha numérico validado por el backend y código por correo; después de verificar se accede a `/admin/`. El captcha es una suma, está ligado a la sesión, vence en cinco minutos y se consume en cada intento. Se puede solicitar otro cálculo desde el formulario. El código por correo es válido durante 10 minutos, admite cinco intentos y un único uso. El reenvío espera un minuto y no reinicia intentos. Sesiones revocables de ocho horas por defecto, cookies HttpOnly y CSRF en escrituras.
 
 Los administradores gestionan conocimiento y su contraseña; los superadministradores también gestionan cuentas, roles y auditoría. El primer usuario debe ser superadministrador. Las cuentas anteriores mantienen permisos mediante la migración a superadministrador.
 

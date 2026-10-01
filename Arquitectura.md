@@ -241,7 +241,7 @@ Node.js se utiliza en la etapa de compilación. La imagen final ejecuta Nginx.
 | `/` y rutas editoriales | HTML generado por Astro | Navegación del portal y contenido público |
 | `/gianna/` | Página Astro con cabecera, introducción, alcance y pie | Carga el chat mediante un iframe del mismo origen |
 | `/_gianna/` | Entrada Vite del chat | Nginx exige contexto de iframe y referencia a `/gianna/`; React comprueba el padre |
-| `/admin/login` | Entrada Vite de acceso al panel | Contraseña y código por correo; `/admin` redirige aquí |
+| `/admin/login` | Entrada Vite de acceso al panel | Contraseña, captcha numérico y código por correo; `/admin` redirige aquí |
 | `/admin/` | Entrada Vite del panel | Sesión autenticada; la API verifica permisos |
 | Otras rutas `/admin/*` | Página 404 | No se usa un fallback general del panel |
 | `/chat` y `/chat/` | Redirección 302 | Lleva a `/gianna/` |
@@ -253,6 +253,8 @@ Node.js se utiliza en la etapa de compilación. La imagen final ejecuta Nginx.
 ### 4.3 Flujo del portal
 
 Astro genera el contenido editorial a partir de `route-manifest.json`, `pages.json` y `catalog.json`. `SiteLayout.astro` aporta metadatos, cabecera, pie, accesibilidad y `ClientRouter`.
+
+Los enlaces a `/gianna/` de la portada, cabecera y pie usan `data-astro-reload` para cargar el documento completo. Así el iframe recibe como referencia la página de Gianna y cumple el control de acceso de Nginx. El resto de la navegación editorial mantiene `ClientRouter`. Este comportamiento se configura mediante el atributo descrito en la [documentación oficial de Astro](https://docs.astro.build/en/guides/view-transitions/).
 
 Las islas React se activan para las funciones interactivas:
 
@@ -502,7 +504,7 @@ Estas herramientas trabajan con el conocimiento activado y cálculos locales. El
 
 Las cuentas tienen nombre, correo y rol. Un administrador gestiona conocimiento y su contraseña. Un superadministrador también gestiona usuarios, roles y auditoría. La API comprueba los permisos en cada solicitud; el panel adapta sus controles. Un cambio de rol revoca las sesiones del usuario y no se puede quitar el último superadministrador activo.
 
-Las migraciones SQL de `backend/migrations/` se aplican transaccionalmente con `PRAGMA user_version`: administración en versión 2 y cupos en versión 1. Las cuentas preexistentes mantienen todos sus permisos como superadministradores; sus nombres iniciales se derivan del correo.
+Las migraciones SQL de `backend/migrations/` se aplican transaccionalmente con `PRAGMA user_version`: administración en versión 3 y cupos en versión 1. Las cuentas preexistentes mantienen todos sus permisos como superadministradores; sus nombres iniciales se derivan del correo. La versión 3 añade el captcha numérico a las sesiones administrativas.
 
 Los comandos de operación están en [backend/Instructions.txt](backend/Instructions.txt): entorno virtual, dependencias, `python -m manage db upgrade -d migrations`, `seed-data`, `create-admin nombre correo contraseña true/false` y `python asgi.py`. La migración y preparación manual requieren el servicio detenido.
 
@@ -519,10 +521,12 @@ sequenceDiagram
 
     UI->>API: GET /api/admin/session
     API->>DB: Recuperar o crear sesión anónima
-    API-->>UI: Cookie HttpOnly + token CSRF
-    A->>UI: Correo y contraseña
-    UI->>API: POST /login + cookie + CSRF
-    API->>DB: Límites de intentos y hash Argon2
+    API-->>UI: Cookie HttpOnly + CSRF + pregunta de suma
+    A->>UI: Correo, contraseña y resultado de la suma
+    UI->>API: POST /login + captcha_id + captcha_answer + CSRF
+    API->>DB: Comprobar límites de intentos por IP y correo
+    API->>DB: Validar y consumir el captcha en transacción
+    API->>DB: Comprobar contraseña con Argon2
     API->>M: Enviar código de 6 dígitos
     M-->>A: Código por correo
     API->>DB: Crear sesión pending y hash del código
@@ -545,6 +549,8 @@ sequenceDiagram
 |---|---|
 | Contraseña | Hash Argon2; cuenta inicial opcional desde variables de entorno |
 | Etapas | `anonymous` → `pending` → `authenticated` |
+| Captcha numérico | Suma de dos números entre 1 y 10; resultado con HMAC, ligado a sesión, vence en cinco minutos y se consume al intentar el login |
+| Renovación del captcha | `POST /api/admin/captcha`, con cookie, CSRF y origen permitido; máximo 20 renovaciones por IP/minuto |
 | Código de acceso | Seis dígitos, un solo uso, hasta 10 minutos, máximo cinco intentos |
 | Reenvío | Espera mínima de 60 segundos |
 | Sesión autenticada | Ocho horas por defecto, configurable entre una y 24 horas |
@@ -764,7 +770,7 @@ Los cambios de variables incorporadas al build requieren recompilar el frontend.
 
 ## 15. Validación y documentos relacionados
 
-La validación funcional cubre **84 pruebas aprobadas**: 34 del backend, cinco unitarias del portal, 37 de navegador y ocho de integración entre contenedores mediante proxy y CORS. Incluye comandos de preparación, migraciones, nombres, roles y rutas administrativas. También se comprobó una consulta con Ollama Cloud, persistencia de cupos tras reinicio y ausencia de tablas de conversaciones.
+La validación funcional cubre **93 pruebas aprobadas**: 39 del backend, cinco unitarias del portal, 41 de navegador y ocho de integración entre contenedores mediante proxy y CORS. Incluye captcha numérico, comandos de preparación, migraciones, nombres, roles y rutas administrativas. También se comprobó una consulta con Ollama Cloud, persistencia de cupos tras reinicio y ausencia de tablas de conversaciones.
 
 Los resultados, alcance de la simulación y estado del SMTP real se detallan en el informe de validación.
 

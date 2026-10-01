@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import time
 from contextlib import asynccontextmanager
 
@@ -67,10 +68,17 @@ def system(tmp_path, monkeypatch):
         yield client, auth, knowledge, db, mail, state
 
 
+def login_body(client, email=EMAIL, password=PASSWORD):
+    captcha = client.get("/api/admin/session").json()["captcha"]
+    numbers = [int(value) for value in re.findall(r"[0-9]+", captcha["question"])]
+    return {"email": email, "password": password, "captcha_id": captcha["id"],
+            "captcha_answer": str(sum(numbers))}
+
+
 def begin_login(system):
     client, _, _, _, mail, _ = system
     csrf = client.get("/api/admin/session").json()["csrf"]
-    response = client.post("/api/admin/login", json={"email": EMAIL, "password": PASSWORD}, headers={"X-CSRF-Token": csrf})
+    response = client.post("/api/admin/login", json=login_body(client), headers={"X-CSRF-Token": csrf})
     assert response.status_code == 200, response.text
     return response.json()["csrf"], mail[-1][1]
 
@@ -110,8 +118,8 @@ def test_two_factors_csrf_and_single_use(system):
     assert client.get("/api/admin/knowledge").status_code == 401
     anon = client.get("/api/admin/session")
     assert "HttpOnly" in anon.headers["set-cookie"] and "SameSite=strict" in anon.headers["set-cookie"]
-    assert client.post("/api/admin/login", json={"email": EMAIL, "password": PASSWORD}).status_code == 403
-    assert client.post("/api/admin/login", json={"email": EMAIL, "password": PASSWORD},
+    assert client.post("/api/admin/login", json=login_body(client)).status_code == 403
+    assert client.post("/api/admin/login", json=login_body(client),
                        headers={"X-CSRF-Token": anon.json()["csrf"], "Origin": "https://evil.test"}).status_code == 403
     csrf, code = begin_login(system)
     old_cookie = client.cookies.get("gianna_admin")
@@ -161,8 +169,80 @@ def test_login_rate_limit(system):
     client = system[0]
     csrf = client.get("/api/admin/session").json()["csrf"]
     for _ in range(5):
-        assert client.post("/api/admin/login", json={"email": EMAIL, "password": "wrong"}, headers={"X-CSRF-Token": csrf}).status_code == 401
-    assert client.post("/api/admin/login", json={"email": EMAIL, "password": PASSWORD}, headers={"X-CSRF-Token": csrf}).status_code == 429
+        assert client.post("/api/admin/login", json=login_body(client, password="wrong"), headers={"X-CSRF-Token": csrf}).status_code == 401
+    assert client.post("/api/admin/login", json=login_body(client), headers={"X-CSRF-Token": csrf}).status_code == 429
+
+
+def test_numeric_captcha_required_and_wrong_answer_is_consumed(system):
+    client, _, _, db, mail, _ = system
+    anon = client.get("/api/admin/session").json()
+    headers = {"X-CSRF-Token": anon["csrf"]}
+    assert set(anon["captcha"]) == {"id", "question", "expires_in"}
+    assert 0 < anon["captcha"]["expires_in"] <= 300
+    assert client.post("/api/admin/login", json={"email": EMAIL, "password": PASSWORD}, headers=headers).status_code == 422
+    body = login_body(client)
+    body["captcha_answer"] = "99"
+    assert client.post("/api/admin/login", json=body, headers=headers).status_code == 400
+    assert mail == []
+    with db.connect() as conn:
+        assert conn.execute("SELECT captcha_hash FROM sessions").fetchone()[0] is None
+    fresh = client.get("/api/admin/session").json()["captcha"]
+    assert fresh["id"] != body["captcha_id"]
+
+
+def test_numeric_captcha_single_use_after_bad_credentials(system):
+    client, _, _, _, mail, _ = system
+    headers = {"X-CSRF-Token": client.get("/api/admin/session").json()["csrf"]}
+    body = login_body(client, password="wrong")
+    assert client.post("/api/admin/login", json=body, headers=headers).status_code == 401
+    body["password"] = PASSWORD
+    assert client.post("/api/admin/login", json=body, headers=headers).status_code == 400
+    assert mail == []
+    assert client.post("/api/admin/login", json=login_body(client), headers=headers).status_code == 200
+    assert len(mail) == 1
+
+
+def test_numeric_captcha_expiration_and_reload(system):
+    client, auth, _, db, mail, _ = system
+    anon = client.get("/api/admin/session").json()
+    body = login_body(client)
+    assert client.get("/api/admin/session").json()["captcha"]["id"] == body["captcha_id"]
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM sessions").fetchone()
+        assert row["captcha_hash"] != body["captcha_answer"]
+        conn.execute("UPDATE sessions SET captcha_expires=?", (time.time() - 1,))
+    assert client.post("/api/admin/login", json=body, headers={"X-CSRF-Token": anon["csrf"]}).status_code == 400
+    assert mail == []
+    fresh = client.get("/api/admin/session").json()["captcha"]
+    assert fresh["id"] != body["captcha_id"]
+    assert auth.captcha({"token_hash": row["token_hash"]})["id"] == fresh["id"]
+
+
+def test_numeric_captcha_bound_to_session_and_refresh_has_csrf_and_limit(system):
+    client, _, _, _, mail, _ = system
+    first = login_body(client)
+    client.cookies.clear()
+    second = client.get("/api/admin/session").json()
+    headers = {"X-CSRF-Token": second["csrf"]}
+    assert client.post("/api/admin/login", json=first, headers=headers).status_code == 400
+    assert client.post("/api/admin/captcha").status_code == 403
+    assert client.post("/api/admin/captcha", headers={**headers, "Origin": "https://evil.test"}).status_code == 403
+    refreshed = client.post("/api/admin/captcha", headers=headers)
+    assert refreshed.status_code == 200 and refreshed.json()["id"] != second["captcha"]["id"]
+    for _ in range(19):
+        assert client.post("/api/admin/captcha", headers=headers).status_code == 200
+    assert client.post("/api/admin/captcha", headers=headers).status_code == 429
+    assert mail == []
+
+
+def test_numeric_captcha_concurrent_consumption_has_one_winner(system):
+    from concurrent.futures import ThreadPoolExecutor
+    client, auth, _, _, _, _ = system
+    body = login_body(client)
+    session = {"token_hash": auth.digest(client.cookies.get("gianna_admin"))}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: auth.consume_captcha(session, body["captcha_id"], body["captcha_answer"]), range(2)))
+    assert sorted(results) == [False, True]
 
 
 def test_mail_failure_never_authenticates(system):
@@ -171,7 +251,7 @@ def test_mail_failure_never_authenticates(system):
         raise RuntimeError("SMTP secret should never appear")
     auth.mailer = fail
     csrf = client.get("/api/admin/session").json()["csrf"]
-    result = client.post("/api/admin/login", json={"email": EMAIL, "password": PASSWORD}, headers={"X-CSRF-Token": csrf})
+    result = client.post("/api/admin/login", json=login_body(client), headers={"X-CSRF-Token": csrf})
     assert result.status_code == 503 and "SMTP secret" not in result.text
     assert client.get("/api/admin/session").json()["stage"] == "anonymous"
 
@@ -295,7 +375,7 @@ def test_regular_admin_can_manage_knowledge_but_not_users_or_audit(system):
     client, auth, _, _, mail, _ = system
     auth.create_user("editor@example.test", PASSWORD, "test", "Editor", False)
     csrf = client.get("/api/admin/session").json()["csrf"]
-    pending = client.post("/api/admin/login", json={"email": "editor@example.test", "password": PASSWORD},
+    pending = client.post("/api/admin/login", json=login_body(client, "editor@example.test"),
                           headers={"X-CSRF-Token": csrf}).json()
     verified = client.post("/api/admin/verify", json={"code": mail[-1][1]},
                            headers={"X-CSRF-Token": pending["csrf"]})

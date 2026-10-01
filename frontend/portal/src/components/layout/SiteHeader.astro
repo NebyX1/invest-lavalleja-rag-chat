@@ -29,7 +29,7 @@ const brochureHref = '/documentos/folleto-invest-lavalleja.pdf';
       <span class="brand-name"><b>INVEST</b><small>LAVALLEJA</small></span>
     </a>
     <nav class="nav-links" id="primary-nav" aria-label="Principal" data-mobile-nav>
-      {navItems.map(([href, label]) => <a href={href} class:list={{ active: isActive(href) }} data-astro-prefetch>{label}</a>)}
+      {navItems.map(([href, label]) => <a href={href} class:list={{ active: isActive(href) }} data-astro-prefetch data-astro-reload={href === '/gianna/' ? '' : undefined}>{label}</a>)}
       <a class="nav-download" href={brochureHref} download="folleto-invest-lavalleja.pdf" aria-label="Descargar folleto Invest Lavalleja (PDF)">
         Folleto PDF <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-download" /></svg>
       </a>

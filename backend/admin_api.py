@@ -15,16 +15,21 @@ from admin_auth import password_hash, valid_password
 MAX_UPLOAD = 10 * 1024 * 1024
 
 
-class Login(BaseModel):
+class Credentials(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=256)
+
+
+class Login(Credentials):
+    captcha_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    captcha_answer: str = Field(pattern=r"^[0-9]{1,2}$")
 
 
 class Code(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
 
 
-class CreateUser(Login):
+class CreateUser(Credentials):
     name: str | None = Field(default=None, min_length=1, max_length=80)
     is_superadmin: StrictBool = False
 
@@ -87,15 +92,25 @@ def admin_router(auth, knowledge, db):
     def session(request: Request, response: Response):
         try:
             row = auth.session(request)
-            return {"stage": row["stage"], "csrf": row["csrf"], "email": row["email"],
+            result = {"stage": row["stage"], "csrf": row["csrf"], "email": row["email"],
                     "name": row["name"], "is_superadmin": bool(row["is_superadmin"]),
                     "resend_after": max(0, int(60 - (time.time() - row["sent"])))}
+            if row["stage"] == "anonymous":
+                result["captcha"] = auth.captcha(row)
+            return result
         except HTTPException:
             return auth.new_session(response)
 
     @router.post("/login")
     def login(body: Login, request: Request, response: Response):
-        return auth.login(request, response, body.email, body.password)
+        return auth.login(request, response, body.email, body.password, body.captcha_id, body.captcha_answer)
+
+    @router.post("/captcha")
+    def captcha(request: Request):
+        row = auth.protect(request, False)
+        ip = request.client.host if request.client else "?"
+        auth.limit("captcha-ip:" + ip, 20, 60)
+        return auth.captcha(row, refresh=True)
 
     @router.post("/verify")
     def verify(body: Code, request: Request, response: Response):

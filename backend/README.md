@@ -34,6 +34,8 @@ python -m manage create-admin "Nombre" correo@tu-dominio.uy contraseña-de-admin
 
 El acceso web está en **`/admin/login` del frontend**; después de 2FA se usa `/admin/`. Un administrador gestiona conocimiento y su contraseña. Un superadministrador también crea cuentas, modifica roles y consulta auditoría. Cambiar un rol revoca las sesiones del usuario y siempre debe quedar un superadministrador activo.
 
+El login requiere resolver un captcha numérico antes del envío del código por correo. El backend genera una suma, guarda el resultado con HMAC ligado a la sesión y consume el desafío en una transacción. Vence en cinco minutos; el formulario permite cambiar el cálculo y lo renueva tras un intento fallido. La respuesta no se incluye en el JSON de la sesión.
+
 El backend publica únicamente la API. `/`, `/admin/login`, `/docs`, `/redoc` y `/openapi.json` devuelven 404; las rutas administrativas privadas requieren 2FA. Las rutas desconocidas bajo `/admin/` del frontend devuelven 404.
 
 Copiar `.env.example` a `.env` y configurar las variables antes de ejecutar:

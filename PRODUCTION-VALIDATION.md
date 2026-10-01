@@ -6,9 +6,9 @@ Ejecutada localmente el 1 de octubre de 2026, con Docker Desktop, Node 24 y Pyth
 
 | Comprobación | Resultado |
 |---|---|
-| Backend, administración, roles, migraciones, CLI, contrato SSE, cuotas, concurrencia y vencimiento | 34 pruebas aprobadas |
+| Backend, administración, captcha, roles, migraciones, CLI, contrato SSE, cuotas, concurrencia y vencimiento | 39 pruebas aprobadas |
 | Catálogo y persistencia del portal | 5 pruebas unitarias aprobadas |
-| Portal, rutas, navegación, dossier, wizard, PDF, accesibilidad y Gianna, escritorio/móvil | 37 pruebas aprobadas |
+| Portal, login con captcha, rutas, navegación, dossier, wizard, PDF, accesibilidad y Gianna, escritorio/móvil | 41 pruebas aprobadas |
 | Contenedores separados, SSE, herramientas, 2FA, CSRF y gestión de nombres/roles por proxy/CORS | 8 pruebas aprobadas |
 | Astro check / ESLint | 0 errores, 0 advertencias |
 | npm audit, portal y agente | 0 vulnerabilidades después de actualizar Vitest a 4.1.11 |
@@ -19,7 +19,7 @@ Ejecutada localmente el 1 de octubre de 2026, con Docker Desktop, Node 24 y Pyth
 | Persistencia | Cuenta, conocimiento y cupos sobreviven a reinicios |
 | Salud de la instalación local | `ok=true`, `knowledge_ready=true`, 224 fragmentos |
 
-La suite ordinaria omite ocho pruebas que necesitan el entorno aislado y una captura móvil duplicada. Las ocho pruebas de integración se ejecutaron aparte y aprobaron. Total: **84 pruebas aprobadas**, además de las comprobaciones de runtime.
+La suite ordinaria omite ocho pruebas que necesitan el entorno aislado y una captura móvil duplicada. Las ocho pruebas de integración se ejecutaron aparte y aprobaron. Total: **93 pruebas aprobadas**, además de las comprobaciones de runtime.
 
 ## Comandos, roles y rutas administrativas
 
@@ -35,12 +35,24 @@ Los navegadores de escritorio y móvil completaron el acceso de ambas clases de 
 |---|---|---|
 | `/` | 200, portal Invest | 404 |
 | `/admin` | 302 a `/admin/login` | 404 |
-| `/admin/login` | 200, acceso con contraseña y código | 404 |
+| `/admin/login` | 200, acceso con contraseña, captcha y código | 404 |
 | `/admin/` | 200, interfaz; API privada exige 2FA | 404 |
 | `/admin/no-existe`, `/admin/index.html` | 404 | 404 |
 | `/docs`, `/redoc`, `/openapi.json` | — | 404 |
 
 La prueba de instalación vacía verificó las versiones de esquema, nombre y rol de la cuenta inicial, acceso privado, UID 10001 y persistencia tras reinicio. El arranque local continúa usando FastAPI/Uvicorn mediante `python asgi.py`.
+
+## Acceso institucional y captcha numérico
+
+El login identifica a Invest Lavalleja como la Ventanilla Única de Inversiones de Lavalleja. Se comprobó su presentación en escritorio y móvil, sin desbordamiento horizontal, y el enlace de regreso a la portada.
+
+El captcha reproduce el cálculo del backend de referencia: una suma de dos números entre 1 y 10. El backend conserva únicamente su HMAC ligado a la sesión; el desafío vence en cinco minutos y se consume en una transacción al intentar el acceso. La API nunca devuelve el resultado. Las pruebas cubren respuesta incorrecta, vencimiento, reutilización, separación entre sesiones y dos consumos concurrentes con un solo ganador. La renovación exige CSRF y origen autorizado, con un máximo de 20 solicitudes por IP/minuto.
+
+Las pruebas de navegador verificaron el botón «Cambiar cálculo», el rechazo de un resultado incorrecto y la renovación automática sin borrar las credenciales. El flujo con respuesta correcta completó contraseña y código por correo en los contenedores de QA, mediante proxy y CORS, para ambos roles. No se enviaron correos externos.
+
+Antes de migrar la instalación local se hizo otra copia SQLite dentro de su volumen privado. La base administrativa quedó en versión 3; se conservaron el documento, la revisión y los contadores previos. La prueba de instalación vacía y reinicio también pasó con el esquema 3.
+
+Al volver del login a la portada se detectó que la navegación parcial hacia Gianna enviaba al iframe una referencia de la portada y Nginx rechazaba su carga. Los enlaces de Gianna en portada, cabecera y pie ahora cargan el documento completo; se mantiene la navegación parcial del resto del portal y el control de acceso al iframe.
 
 ## Cuotas y conversaciones
 

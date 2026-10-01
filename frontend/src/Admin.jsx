@@ -237,7 +237,7 @@ export default function Admin() {
   }, [session, tab]);
 
   useEffect(() => {
-    document.title = "Administración · Gianna";
+    document.title = "Administración · Invest Lavalleja";
     getSession().catch((e) => setError(e.message));
   }, [getSession]);
   useEffect(() => {
@@ -283,12 +283,18 @@ export default function Admin() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     await perform(async () => {
-      const result = await api("/login", {
-        method: "POST",
-        body: JSON.stringify(Object.fromEntries(form)),
-      });
-      setSession(result);
-      setCountdown(60);
+      try {
+        const result = await api("/login", {
+          method: "POST",
+          body: JSON.stringify(Object.fromEntries(form)),
+        });
+        setSession(result);
+        setCountdown(60);
+      } catch (error) {
+        // Cada intento consume el cálculo; recuperar uno nuevo sin borrar las credenciales.
+        await getSession().catch(() => {});
+        throw error;
+      }
     });
   }
 
@@ -369,20 +375,18 @@ export default function Admin() {
       <div className="ga-login">
         <aside className="ga-login-brand">
           <a href="/" className="ga-wordmark">
-            gianna<span>INVEST LAVALLEJA</span>
+            Invest<span>LAVALLEJA</span>
           </a>
           <div>
-            <span className="ga-eyebrow">ESPACIO DE ADMINISTRACIÓN</span>
+            <span className="ga-eyebrow">INTENDENCIA DE LAVALLEJA</span>
             <h1>
-              El conocimiento
-              <br />
-              detrás de cada
-              <br />
-              <em>conversación.</em>
+              Ventanilla Única <br />
+              de Inversiones <br />
+              <em>de Lavalleja.</em>
             </h1>
             <p>
-              Gestioná las fuentes que ayudan a Gianna a orientar a inversores y
-              emprendedores de Lavalleja.
+              Información, oportunidades y orientación para invertir y emprender
+              en el departamento.
             </p>
           </div>
           <div className="ga-login-foot">
@@ -391,16 +395,16 @@ export default function Admin() {
         </aside>
         <main className="ga-login-main">
           <div className="ga-login-card">
-            <span className="ga-eyebrow">PANEL DE CONTROL</span>
+            <span className="ga-eyebrow">ADMINISTRACIÓN DEL PORTAL</span>
             <h2>
               {session?.stage === "pending"
                 ? "Revisá tu correo"
-                : "Bienvenido al panel"}
+                : "Acceso administrativo"}
             </h2>
             <p>
               {session?.stage === "pending"
                 ? "Ingresá el código de 6 dígitos que te enviamos. Vence en 10 minutos."
-                : "Ingresá con tu cuenta de administrador. Después verificaremos tu acceso por correo."}
+                : "Ingresá tus credenciales y resolvé la verificación de seguridad. Luego recibirás un código por correo."}
             </p>
             {message}
             {!session ? (
@@ -481,9 +485,55 @@ export default function Admin() {
                     maxLength={256}
                   />
                 </label>
+                <input
+                  type="hidden"
+                  name="captcha_id"
+                  value={session.captcha?.id || ""}
+                />
+                <div className="ga-captcha">
+                  <div className="ga-captcha-heading">
+                    <span>Verificación de seguridad</span>
+                    <button
+                      type="button"
+                      className="ga-text-button"
+                      disabled={pending}
+                      onClick={() =>
+                        perform(async () => {
+                          const captcha = await api("/captcha", {
+                            method: "POST",
+                          });
+                          setSession((current) => ({ ...current, captcha }));
+                        })
+                      }
+                    >
+                      Cambiar cálculo
+                    </button>
+                  </div>
+                  <label className="ga-field">
+                    <span
+                      id="admin-captcha-question"
+                      className="ga-captcha-question"
+                      aria-live="polite"
+                    >
+                      {session.captcha?.question || "Cargando cálculo…"}
+                    </span>
+                    <input
+                      key={session.captcha?.id}
+                      aria-label="Resultado de la suma"
+                      aria-describedby="admin-captcha-question"
+                      name="captcha_answer"
+                      inputMode="numeric"
+                      pattern="[0-9]{1,2}"
+                      maxLength={2}
+                      autoComplete="off"
+                      placeholder="Ingresá el resultado"
+                      required
+                    />
+                  </label>
+                </div>
                 <button
                   className="ga-button ga-primary ga-full"
-                  disabled={pending}
+                  disabled={pending || !session.captcha}
                 >
                   {pending ? "Enviando código…" : "Continuar"}
                   <Icon name="arrow" />
@@ -491,10 +541,10 @@ export default function Admin() {
               </form>
             )}
             <p className="ga-login-help">
-              El acceso está reservado a administradores registrados.
+              Acceso exclusivo para el equipo autorizado.
             </p>
-            <a className="ga-back" href="/gianna/">
-              ← Volver al chat de Gianna
+            <a className="ga-back" href="/">
+              ← Volver a Invest Lavalleja
             </a>
           </div>
         </main>
@@ -507,7 +557,7 @@ export default function Admin() {
     <div className="ga-shell">
       <aside className="ga-sidebar">
         <a href="/admin" className="ga-wordmark">
-          gianna<span>INVEST LAVALLEJA</span>
+          Invest<span>LAVALLEJA</span>
         </a>
         <div className="ga-sidebar-label">ADMINISTRACIÓN</div>
         <nav aria-label="Administración">
@@ -1270,8 +1320,8 @@ export default function Admin() {
             </>
           )}
           <footer className="ga-footer">
-            Gianna · Invest Lavalleja
-            <span>Conocimiento cuidado, decisiones mejor informadas.</span>
+            Invest Lavalleja
+            <span>Ventanilla Única de Inversiones</span>
           </footer>
         </div>
       </main>

@@ -2,6 +2,11 @@ import { expect, test } from '@playwright/test';
 
 async function submitLogin(page: import('@playwright/test').Page) {
   for (let attempt = 0; attempt < 2; attempt++) {
+    const question = await page.locator('.ga-captcha-question').innerText();
+    const numbers = question.match(/[0-9]+/g);
+    expect(numbers).toHaveLength(2);
+    await page.getByRole('textbox', { name: 'Resultado de la suma', exact: true }).fill(
+      String(numbers!.reduce((sum, value) => sum + Number(value), 0)));
     const responsePromise = page.waitForResponse((response) =>
       new URL(response.url()).pathname === '/api/admin/login' && response.request().method() === 'POST');
     await page.getByRole('button', { name: /ingresar|continuar|enviar código/i }).click();

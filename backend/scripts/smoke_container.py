@@ -58,7 +58,7 @@ def main():
         token = json.loads(raw)["token"]
         assert request("/api/chat", {"messages": [{"role": "user", "content": "Hola"}]},
                        {"Origin": origin, "X-Chat-Session": token})[0] == 503
-        check = "from pathlib import Path; import os,sqlite3; assert Path.home().is_dir() and os.access(Path.home(),os.W_OK); p=Path('/data/admin/admin.sqlite3'); db=sqlite3.connect(p); assert db.execute('PRAGMA user_version').fetchone()[0]==2; assert db.execute('select count(*) from users where is_superadmin=1 and name!=\"\"').fetchone()[0]==1; quota=sqlite3.connect('/data/admin/chat-quota.sqlite3'); assert quota.execute('PRAGMA user_version').fetchone()[0]==1; assert not Path('/app/backend/.env').exists(); assert not Path('/app/.env').exists(); print('persistencia y aislamiento correctos')"
+        check = "from pathlib import Path; import os,sqlite3; assert Path.home().is_dir() and os.access(Path.home(),os.W_OK); p=Path('/data/admin/admin.sqlite3'); db=sqlite3.connect(p); assert db.execute('PRAGMA user_version').fetchone()[0]==3; assert db.execute('select count(*) from users where is_superadmin=1 and name!=\"\"').fetchone()[0]==1; quota=sqlite3.connect('/data/admin/chat-quota.sqlite3'); assert quota.execute('PRAGMA user_version').fetchone()[0]==1; assert not Path('/app/backend/.env').exists(); assert not Path('/app/.env').exists(); print('persistencia y aislamiento correctos')"
         assert "correctos" in docker("exec", name, "python", "-c", check)
         docker("restart", name)
         for _ in range(60):

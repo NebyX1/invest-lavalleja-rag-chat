@@ -17,6 +17,7 @@ coverage/
 test-results/
 playwright-report/
 reports/captures/
+reports/admin-login-*.png
 reports/playwright/
 backend/reports/*
 !backend/reports/*.md

@@ -4,6 +4,8 @@ test('entrada administrativa explícita y rutas desconocidas bloqueadas', async 
   const login = await page.goto('/admin/login');
   expect(login?.status()).toBe(200);
   await expect(page.getByRole('textbox', { name: 'Correo electrónico', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Acceso administrativo', exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Resultado de la suma', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/admin\/login$/);
   for (const path of ['/admin/no-existe', '/admin/index.html']) {
     const response = await page.goto(path);
@@ -12,8 +14,47 @@ test('entrada administrativa explícita y rutas desconocidas bloqueadas', async 
   }
 });
 
+test('login institucional renueva el captcha y rechaza un resultado incorrecto', async ({ page, isMobile }) => {
+  await page.goto('/admin/login');
+  if (!isMobile) await expect(page.getByRole('heading', { level: 1 })).toHaveText('Ventanilla Única de Inversiones de Lavalleja.');
+  await expect(page.getByRole('link', { name: '← Volver a Invest Lavalleja', exact: true })).toHaveAttribute('href', '/');
+  const id = page.locator('input[name="captcha_id"]');
+  const initial = await id.inputValue();
+  const answer = page.getByRole('textbox', { name: 'Resultado de la suma', exact: true });
+  await page.screenshot({ path: `reports/admin-login-${isMobile ? 'mobile' : 'desktop'}.png`, fullPage: true });
+  await answer.fill('99');
+  await page.getByRole('button', { name: 'Cambiar cálculo', exact: true }).click();
+  await expect(id).not.toHaveValue(initial);
+  await expect(answer).toHaveValue('');
+  await page.getByRole('textbox', { name: 'Correo electrónico', exact: true }).fill('captcha-ui@example.test');
+  await page.getByLabel('Contraseña', { exact: true }).fill('Only-for-captcha-ui-2026!');
+  const refreshed = await id.inputValue();
+  await answer.fill('99');
+  await page.getByRole('button', { name: 'Continuar', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('La respuesta de seguridad es incorrecta o venció');
+  await expect(id).not.toHaveValue(refreshed);
+  await expect(answer).toHaveValue('');
+  await expect(page.getByRole('textbox', { name: 'Correo electrónico', exact: true })).toHaveValue('captcha-ui@example.test');
+  await expect(page.getByLabel('Contraseña', { exact: true })).toHaveValue('Only-for-captcha-ui-2026!');
+  await expect(page.getByLabel(/código/i)).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
 const conversation = (page: import('@playwright/test').Page) => page.frameLocator('.gianna-agent-frame');
 const event = (name: string, data: unknown) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+
+test('los enlaces del portal abren Gianna con el iframe autorizado', async ({ page, isMobile }) => {
+  const selectors = ['.gianna-promo a[href="/gianna/"]', 'footer a[href="/gianna/"]'];
+  if (!isMobile) selectors.push('.nav-links a[href="/gianna/"]');
+  for (const selector of selectors) {
+    await page.goto('/');
+    await expect(page.locator('.nav-links a[href="/territorio/"]')).not.toHaveAttribute('data-astro-reload');
+    await expect(page.locator(selector)).toHaveAttribute('data-astro-reload', '');
+    await page.locator(selector).click();
+    await expect(page).toHaveURL(/\/gianna\/$/);
+    await expect(conversation(page).getByRole('heading', { name: 'Gianna', exact: true })).toBeVisible();
+  }
+});
 
 test('Gianna conserva la página original y los enlaces editoriales sin JavaScript', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ javaScriptEnabled: false, baseURL });
@@ -152,8 +193,10 @@ test('el chat integrado cabe en móvil y sólo se abre desde el portal; admin si
   await page.goto('/admin');
   await expect(page.getByRole('textbox', { name: 'Correo electrónico', exact: true })).toBeVisible();
   await expect(page.getByPlaceholder('Escribí tu consulta sobre inversiones en Lavalleja…')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /volver al chat de gianna/i })).toHaveAttribute('href', '/gianna/');
-  await page.getByRole('link', { name: /volver al chat de gianna/i }).click();
+  await expect(page.getByRole('link', { name: /volver a invest lavalleja/i })).toHaveAttribute('href', '/');
+  await page.getByRole('link', { name: /volver a invest lavalleja/i }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.locator('.gianna-promo').getByRole('link', { name: /preguntale a gianna/i }).click();
   await expect(conversation(page).getByRole('heading', { name: 'Gianna', exact: true })).toBeVisible();
 });
 
