@@ -1,5 +1,8 @@
 #!/bin/sh
 set -eu
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
 if [ -z "${OLLAMA_API_KEY:-}" ] || [ -z "${OLLAMA_MODEL:-}" ]; then
   echo "Faltan OLLAMA_API_KEY y/o OLLAMA_MODEL." >&2
   exit 1

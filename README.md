@@ -4,7 +4,7 @@ Portal original de Invest Lavalleja con el agente de inversiones existente: Reac
 
 ## Estructura
 
-- **frontend/**: portal Astro en `portal/`, cliente React en `src/`, panel `/admin`, Dockerfile y Nginx. Su imagen no contiene Python ni credenciales.
+- **frontend/**: portal Astro en `portal/`, cliente React en `src/`, panel `/admin/login`, Dockerfile y Nginx. Su imagen no contiene Python ni credenciales.
 - **backend/**: agente Python, API, administración, documentos locales, scripts, pruebas, Dockerfile y Uvicorn. Su imagen no contiene el frontend ni Nginx.
 - `compose.yaml` reúne las dos configuraciones independientes para desarrollo y simulación local.
 
@@ -16,7 +16,9 @@ Copiar `backend/.env.example` a `backend/.env`, configurar Ollama, una clave `AD
 docker compose --env-file backend/.env -f compose.yaml -f compose.local.yaml up --build -d
 ```
 
-Web: [http://localhost:8080](http://localhost:8080). Gianna: `/gianna/`. Panel: `/admin`. API: `http://localhost:8010/api/health`.
+Web: [http://localhost:8080](http://localhost:8080). Gianna: `/gianna/`. Panel: `/admin/login`. API: `http://localhost:8010/api/health`.
+
+Los comandos de entorno virtual, migraciones, datos base, creación de administradores con nombre y rol, y arranque local están en [backend/Instructions.txt](backend/Instructions.txt). El administrador gestiona conocimiento y su contraseña; el superadministrador también gestiona cuentas, roles y auditoría.
 
 Una instalación nueva inicia sin conocimiento. El administrador debe cargar la guía Word o su JSONL validado desde el panel. El índice existente se adopta si se monta en `/data/legacy-index`. Los modelos se descargan al volumen en el primer uso.
 

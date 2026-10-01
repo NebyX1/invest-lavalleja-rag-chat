@@ -6,7 +6,7 @@ import zipfile
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from docx.opc.exceptions import PackageNotFoundError
 from lxml.etree import XMLSyntaxError
 
@@ -22,6 +22,15 @@ class Login(BaseModel):
 
 class Code(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
+
+
+class CreateUser(Login):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    is_superadmin: StrictBool = False
+
+
+class UserRole(BaseModel):
+    is_superadmin: StrictBool
 
 
 class Enabled(BaseModel):
@@ -79,6 +88,7 @@ def admin_router(auth, knowledge, db):
         try:
             row = auth.session(request)
             return {"stage": row["stage"], "csrf": row["csrf"], "email": row["email"],
+                    "name": row["name"], "is_superadmin": bool(row["is_superadmin"]),
                     "resend_after": max(0, int(60 - (time.time() - row["sent"])))}
         except HTTPException:
             return auth.new_session(response)
@@ -183,39 +193,55 @@ def admin_router(auth, knowledge, db):
 
     @router.get("/audit")
     def audit(request: Request):
-        auth.session(request, True)
+        auth.session(request, True, superadmin=True)
         with db.connect() as conn:
             return [dict(r) for r in conn.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 100")]
 
     @router.get("/users")
     def users(request: Request):
-        auth.session(request, True)
+        auth.session(request, True, superadmin=True)
         with db.connect() as conn:
-            return [dict(r) for r in conn.execute("SELECT id,email,active,created FROM users ORDER BY created")]
+            return [dict(r) for r in conn.execute("SELECT id,email,name,is_superadmin,active,created FROM users ORDER BY created")]
 
     @router.post("/users", status_code=201)
-    def create_user(body: Login, request: Request):
-        actor = auth.protect(request)["email"]
+    def create_user(body: CreateUser, request: Request):
+        actor = auth.protect(request, superadmin=True)["email"]
         try:
-            auth.create_user(body.email, body.password, actor)
+            auth.create_user(body.email, body.password, actor, body.name, body.is_superadmin)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
         return {"ok": True}
 
     @router.post("/users/{user_id}/enabled")
     def enable_user(user_id: str, body: Enabled, request: Request):
-        actor = auth.protect(request)["email"]
+        actor = auth.protect(request, superadmin=True)["email"]
         with db.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
             if not user:
                 raise HTTPException(404, "Administrador inexistente.")
-            if not body.enabled and user["active"] and conn.execute("SELECT COUNT(*) FROM users WHERE active=1").fetchone()[0] <= 1:
-                raise HTTPException(409, "Debe quedar al menos un administrador activo.")
+            if not body.enabled and user["active"] and user["is_superadmin"] and conn.execute("SELECT COUNT(*) FROM users WHERE active=1 AND is_superadmin=1").fetchone()[0] <= 1:
+                raise HTTPException(409, "Debe quedar al menos un superadministrador activo.")
             conn.execute("UPDATE users SET active=? WHERE id=?", (int(body.enabled), user_id))
             if not body.enabled:
                 conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         db.audit(actor, "admin.enable" if body.enabled else "admin.disable", user["email"])
+        return {"ok": True}
+
+    @router.post("/users/{user_id}/role")
+    def change_role(user_id: str, body: UserRole, request: Request):
+        actor = auth.protect(request, superadmin=True)
+        with db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            if not user:
+                raise HTTPException(404, "Administrador inexistente.")
+            if not body.is_superadmin and user["is_superadmin"] and user["active"] and conn.execute("SELECT COUNT(*) FROM users WHERE active=1 AND is_superadmin=1").fetchone()[0] <= 1:
+                raise HTTPException(409, "Debe quedar al menos un superadministrador activo.")
+            conn.execute("UPDATE users SET is_superadmin=? WHERE id=?", (int(body.is_superadmin), user_id))
+            if bool(user["is_superadmin"]) != body.is_superadmin:
+                conn.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        db.audit(actor["email"], "admin.role_changed", user["email"])
         return {"ok": True}
 
     @router.post("/password")

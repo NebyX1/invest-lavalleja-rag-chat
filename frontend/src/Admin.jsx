@@ -167,7 +167,10 @@ export default function Admin() {
   const fileInput = useRef(null);
 
   const getSession = useCallback(async () => {
-    const response = await fetch(apiUrl("/api/admin/session"), { cache: "no-store", credentials: "include" });
+    const response = await fetch(apiUrl("/api/admin/session"), {
+      cache: "no-store",
+      credentials: "include",
+    });
     if (!response.ok) throw new Error("No se pudo conectar con el panel.");
     const result = await response.json();
     setSession(result);
@@ -215,9 +218,23 @@ export default function Admin() {
     const result = await api("/knowledge");
     setData(result);
     if (tab === "versions") setVersions(await api("/knowledge/revisions"));
-    if (tab === "users") setUsers(await api("/users"));
-    if (tab === "audit") setAudit(await api("/audit"));
-  }, [api, tab]);
+    if (tab === "users" && session?.is_superadmin)
+      setUsers(await api("/users"));
+    if (tab === "audit" && session?.is_superadmin)
+      setAudit(await api("/audit"));
+  }, [api, tab, session?.is_superadmin]);
+
+  useEffect(() => {
+    if (!session) return;
+    const path = session.stage === "authenticated" ? "/admin/" : "/admin/login";
+    if (window.location.pathname !== path)
+      window.history.replaceState(window.history.state, "", path);
+    if (
+      (session.stage !== "authenticated" && tab !== "knowledge") ||
+      (!session.is_superadmin && tab === "audit")
+    )
+      setTab("knowledge");
+  }, [session, tab]);
 
   useEffect(() => {
     document.title = "Administración · Gianna";
@@ -494,20 +511,22 @@ export default function Admin() {
         </a>
         <div className="ga-sidebar-label">ADMINISTRACIÓN</div>
         <nav aria-label="Administración">
-          {tabs.map(([id, label, icon]) => (
-            <button
-              key={id}
-              className={tab === id ? "is-active" : ""}
-              onClick={() => {
-                setTab(id);
-                setError("");
-                setNotice("");
-              }}
-            >
-              <Icon name={icon} />
-              {label}
-            </button>
-          ))}
+          {tabs
+            .filter(([id]) => id !== "audit" || session.is_superadmin)
+            .map(([id, label, icon]) => (
+              <button
+                key={id}
+                className={tab === id ? "is-active" : ""}
+                onClick={() => {
+                  setTab(id);
+                  setError("");
+                  setNotice("");
+                }}
+              >
+                <Icon name={icon} />
+                {id === "users" && !session.is_superadmin ? "Mi cuenta" : label}
+              </button>
+            ))}
         </nav>
         <div className="ga-sidebar-bottom">
           <a href="/gianna/" target="_blank" rel="noreferrer">
@@ -518,8 +537,11 @@ export default function Admin() {
               {session.email?.[0]?.toUpperCase()}
             </span>
             <div>
-              <strong>Administrador</strong>
+              <strong>{session.name || "Administrador"}</strong>
               <span title={session.email}>{session.email}</span>
+              <span>
+                {session.is_superadmin ? "Superadministrador" : "Administrador"}
+              </span>
             </div>
           </div>
           <button
@@ -555,14 +577,20 @@ export default function Admin() {
               <span className="ga-eyebrow">
                 GIANNA / {tab === "knowledge" ? "FUENTES" : "CONTROL"}
               </span>
-              <h1>{tabs.find((t) => t[0] === tab)?.[1]}</h1>
+              <h1>
+                {tab === "users" && !session.is_superadmin
+                  ? "Mi cuenta"
+                  : tabs.find((t) => t[0] === tab)?.[1]}
+              </h1>
               <p>
                 {tab === "knowledge"
                   ? "Una fuente confiable para cada respuesta. Cargá y mantené la información del asistente."
                   : tab === "versions"
                     ? "Revisá los cambios y recuperá una base anterior cuando lo necesites."
                     : tab === "users"
-                      ? "Administrá quién puede acceder y mantené segura tu cuenta."
+                      ? session.is_superadmin
+                        ? "Administrá nombres, roles y acceso al panel."
+                        : "Mantené segura tu cuenta."
                       : "Historial de accesos y cambios en la base de conocimiento."}
               </p>
             </div>
@@ -776,7 +804,9 @@ export default function Admin() {
                                 <td>
                                   <div className="ga-row-actions">
                                     <a
-                                      href={apiUrl(`/api/admin/knowledge/documents/${doc.id}/download`)}
+                                      href={apiUrl(
+                                        `/api/admin/knowledge/documents/${doc.id}/download`,
+                                      )}
                                       className="ga-icon-button"
                                       title="Descargar JSONL"
                                       aria-label={`Descargar ${doc.title}`}
@@ -970,121 +1000,175 @@ export default function Admin() {
               )}
               {tab === "users" && (
                 <>
-                  <section className="ga-panel">
-                    <div className="ga-section-heading">
-                      <div>
-                        <h2>Acceso al panel</h2>
-                        <p>
-                          Todos los administradores verifican su acceso por
-                          correo.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="ga-table-wrap">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Correo</th>
-                            <th>Estado</th>
-                            <th>Acciones</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {users.map((user) => (
-                            <tr key={user.id}>
-                              <td>
-                                {user.email}
-                                {user.email === session.email && (
-                                  <span className="ga-you">Vos</span>
-                                )}
-                              </td>
-                              <td>
-                                <span
-                                  className={`ga-badge ${user.active ? "ga-completed" : "ga-inactive"}`}
-                                >
-                                  {user.active ? "Activo" : "Desactivado"}
-                                </span>
-                              </td>
-                              <td>
-                                <button
-                                  className="ga-text-button"
-                                  disabled={
-                                    pending || user.email === session.email
-                                  }
-                                  onClick={() =>
-                                    perform(async () => {
-                                      await api(`/users/${user.id}/enabled`, {
-                                        method: "POST",
-                                        body: JSON.stringify({
-                                          enabled: !user.active,
-                                        }),
-                                      });
-                                      await refresh();
-                                    })
-                                  }
-                                >
-                                  {user.active
-                                    ? "Desactivar acceso"
-                                    : "Activar acceso"}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                  <div className="ga-form-grid">
+                  {session.is_superadmin && (
                     <section className="ga-panel">
-                      <h2>Agregar administrador</h2>
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const form = e.currentTarget;
-                          const body = Object.fromEntries(new FormData(form));
-                          perform(async () => {
-                            await api("/users", {
-                              method: "POST",
-                              body: JSON.stringify(body),
-                            });
-                            form.reset();
-                            setNotice("Administrador creado.");
-                            await refresh();
-                          });
-                        }}
-                      >
-                        <label className="ga-field">
-                          Correo
-                          <input
-                            type="email"
-                            name="email"
-                            required
-                            maxLength={254}
-                          />
-                        </label>
-                        <label className="ga-field">
-                          Contraseña inicial
-                          <input
-                            type="password"
-                            name="password"
-                            required
-                            minLength={12}
-                            maxLength={256}
-                            autoComplete="new-password"
-                          />
-                        </label>
-                        <p className="ga-form-help">
-                          Usá al menos 12 caracteres. Compartí la contraseña
-                          inicial por un canal privado.
-                        </p>
-                        <button
-                          className="ga-button ga-primary"
-                          disabled={pending}
-                        >
-                          Crear administrador
-                        </button>
-                      </form>
+                      <div className="ga-section-heading">
+                        <div>
+                          <h2>Acceso al panel</h2>
+                          <p>
+                            Todos los administradores verifican su acceso por
+                            correo.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="ga-table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Nombre</th>
+                              <th>Correo</th>
+                              <th>Rol</th>
+                              <th>Estado</th>
+                              <th>Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {users.map((user) => (
+                              <tr key={user.id}>
+                                <td>{user.name}</td>
+                                <td>
+                                  {user.email}
+                                  {user.email === session.email && (
+                                    <span className="ga-you">Vos</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {user.is_superadmin
+                                    ? "Superadministrador"
+                                    : "Administrador"}
+                                </td>
+                                <td>
+                                  <span
+                                    className={`ga-badge ${user.active ? "ga-completed" : "ga-inactive"}`}
+                                  >
+                                    {user.active ? "Activo" : "Desactivado"}
+                                  </span>
+                                </td>
+                                <td>
+                                  <button
+                                    className="ga-text-button"
+                                    disabled={
+                                      pending || user.email === session.email
+                                    }
+                                    onClick={() =>
+                                      perform(async () => {
+                                        await api(`/users/${user.id}/enabled`, {
+                                          method: "POST",
+                                          body: JSON.stringify({
+                                            enabled: !user.active,
+                                          }),
+                                        });
+                                        await refresh();
+                                      })
+                                    }
+                                  >
+                                    {user.active
+                                      ? "Desactivar acceso"
+                                      : "Activar acceso"}
+                                  </button>
+                                  <button
+                                    className="ga-text-button"
+                                    disabled={
+                                      pending || user.email === session.email
+                                    }
+                                    onClick={() =>
+                                      perform(async () => {
+                                        await api(`/users/${user.id}/role`, {
+                                          method: "POST",
+                                          body: JSON.stringify({
+                                            is_superadmin: !user.is_superadmin,
+                                          }),
+                                        });
+                                        await refresh();
+                                      })
+                                    }
+                                  >
+                                    {user.is_superadmin
+                                      ? "Quitar superadministrador"
+                                      : "Hacer superadministrador"}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </section>
+                  )}
+                  <div
+                    className={
+                      session.is_superadmin ? "ga-form-grid" : "ga-account-form"
+                    }
+                  >
+                    {session.is_superadmin && (
+                      <section className="ga-panel">
+                        <h2>Agregar administrador</h2>
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const form = e.currentTarget;
+                            const body = Object.fromEntries(new FormData(form));
+                            body.is_superadmin = body.is_superadmin === "true";
+                            perform(async () => {
+                              await api("/users", {
+                                method: "POST",
+                                body: JSON.stringify(body),
+                              });
+                              form.reset();
+                              setNotice("Administrador creado.");
+                              await refresh();
+                            });
+                          }}
+                        >
+                          <label className="ga-field">
+                            Nombre
+                            <input
+                              name="name"
+                              required
+                              maxLength={80}
+                              autoComplete="off"
+                            />
+                          </label>
+                          <label className="ga-field">
+                            Correo
+                            <input
+                              type="email"
+                              name="email"
+                              required
+                              maxLength={254}
+                            />
+                          </label>
+                          <label className="ga-field">
+                            Rol
+                            <select name="is_superadmin" defaultValue="false">
+                              <option value="false">Administrador</option>
+                              <option value="true">Superadministrador</option>
+                            </select>
+                          </label>
+                          <label className="ga-field">
+                            Contraseña inicial
+                            <input
+                              type="password"
+                              name="password"
+                              required
+                              minLength={12}
+                              maxLength={256}
+                              autoComplete="new-password"
+                            />
+                          </label>
+                          <p className="ga-form-help">
+                            Usá al menos 12 caracteres. Compartí la contraseña
+                            inicial por un canal privado.
+                          </p>
+                          <button
+                            className="ga-button ga-primary"
+                            disabled={pending}
+                          >
+                            Crear administrador
+                          </button>
+                        </form>
+                      </section>
+                    )}
                     <section className="ga-panel">
                       <h2>Cambiar mi contraseña</h2>
                       <form
@@ -1141,7 +1225,7 @@ export default function Admin() {
                   </div>
                 </>
               )}
-              {tab === "audit" && (
+              {tab === "audit" && session.is_superadmin && (
                 <section className="ga-panel">
                   <div className="ga-section-heading">
                     <div>

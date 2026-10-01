@@ -1,5 +1,17 @@
 import { expect, test } from '@playwright/test';
 
+test('entrada administrativa explícita y rutas desconocidas bloqueadas', async ({ page }) => {
+  const login = await page.goto('/admin/login');
+  expect(login?.status()).toBe(200);
+  await expect(page.getByRole('textbox', { name: 'Correo electrónico', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/login$/);
+  for (const path of ['/admin/no-existe', '/admin/index.html']) {
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole('textbox', { name: 'Correo electrónico', exact: true })).toHaveCount(0);
+  }
+});
+
 const conversation = (page: import('@playwright/test').Page) => page.frameLocator('.gianna-agent-frame');
 const event = (name: string, data: unknown) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 

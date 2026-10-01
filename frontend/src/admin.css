@@ -146,7 +146,8 @@
   font-weight: 600;
   margin-bottom: 19px;
 }
-.ga-field input {
+.ga-field input,
+.ga-field select {
   background: #fff;
   border: 1px solid #ced8cb;
   border-radius: 7px;
@@ -159,7 +160,8 @@
   color: #253c33;
   outline: none;
 }
-.ga-field input:focus {
+.ga-field input:focus,
+.ga-field select:focus {
   border-color: #47715b;
   box-shadow: 0 0 0 3px #47715b15;
 }
@@ -761,7 +763,11 @@
   grid-template-columns: 1fr 1fr;
   gap: 22px;
 }
-.ga-form-grid form {
+.ga-account-form {
+  max-width: 560px;
+}
+.ga-form-grid form,
+.ga-account-form form {
   margin-top: 23px;
 }
 .ga-form-help {

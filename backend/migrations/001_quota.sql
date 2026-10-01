@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS quotas (
+    key TEXT PRIMARY KEY, used INTEGER NOT NULL,
+    blocked_until REAL NOT NULL, updated REAL NOT NULL
+);

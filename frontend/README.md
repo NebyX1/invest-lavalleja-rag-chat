@@ -15,7 +15,9 @@ Configurar las variables de `.env.example`. `VITE_API_URL`, `PUBLIC_SITE_URL` y 
 
 - API del mismo origen: `VITE_API_URL` vacío; Nginx envía `/api/` a `BACKEND_URL`.
 - CORS directo: `VITE_API_URL` contiene el origen HTTPS del backend, sin `/api`.
-- El chat se abre únicamente desde `/gianna/`; el panel está en `/admin`.
+- El chat se abre únicamente desde `/gianna/`; el login del panel está en `/admin/login` y la sesión autenticada en `/admin/`.
+- El panel reconoce nombres y roles. Sólo los superadministradores administran usuarios y consultan auditoría; cada administrador puede cambiar su contraseña.
+- Las rutas desconocidas bajo `/admin/` devuelven 404.
 - El historial se guarda en el navegador. Los cupos se validan en el backend.
 
 El contexto Docker es esta carpeta. Se puede desplegar en Coolify sin incluir `backend/`. Ver la [guía de despliegue](../Admin-y-Coolify.md).

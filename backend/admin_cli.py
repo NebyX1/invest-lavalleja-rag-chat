@@ -8,23 +8,26 @@ from admin_db import AdminDB
 from config import ADMIN_DATA_DIR
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("create", "reset-password", "list"))
     parser.add_argument("--email")
-    args = parser.parse_args()
+    parser.add_argument("--name")
+    parser.add_argument("--super-admin", action="store_true")
+    args = parser.parse_args(argv)
     db = AdminDB(ADMIN_DATA_DIR)
     if args.command == "list":
         with db.connect() as conn:
-            for row in conn.execute("SELECT email,active FROM users ORDER BY created"):
-                print(row["email"], "activo" if row["active"] else "desactivado")
+            for row in conn.execute("SELECT name,email,is_superadmin,active FROM users ORDER BY created"):
+                print(row["name"], row["email"], "superadministrador" if row["is_superadmin"] else "administrador",
+                      "activo" if row["active"] else "desactivado")
         return
     email = normalize_email(args.email or input("Correo del administrador: "))
     password = os.getenv("ADMIN_PASSWORD") or getpass.getpass("Contraseña (mínimo 12 caracteres): ")
     if not os.getenv("ADMIN_PASSWORD") and password != getpass.getpass("Repetí la contraseña: "):
         parser.error("Las contraseñas no coinciden.")
     if args.command == "create":
-        AdminAuth(db, bootstrap=False).create_user(email, password, "cli")
+        AdminAuth(db, bootstrap=False).create_user(email, password, "cli", args.name, args.super_admin)
     else:
         encoded = password_hash(password)
         with db.connect() as conn:

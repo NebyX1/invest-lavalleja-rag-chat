@@ -182,6 +182,10 @@ chat-invest/
 │   └── compose.yaml            Configuración autónoma del frontend
 ├── backend/
 │   ├── main.py                 API, arranque, runtime y streaming SSE
+│   ├── asgi.py                 Arranque local con Uvicorn
+│   ├── manage.py               Migraciones, datos base y cuentas por consola
+│   ├── db_migrations.py        Aplicación transaccional de migraciones SQLite
+│   ├── migrations/             Esquemas SQL versionados de administración y cupos
 │   ├── chat_access.py          Origen, sesión firmada y cupos
 │   ├── graph.py                Grafo entender → asesor ↔ herramientas
 │   ├── advisor.py              Planificador y alternativa heurística
@@ -237,7 +241,9 @@ Node.js se utiliza en la etapa de compilación. La imagen final ejecuta Nginx.
 | `/` y rutas editoriales | HTML generado por Astro | Navegación del portal y contenido público |
 | `/gianna/` | Página Astro con cabecera, introducción, alcance y pie | Carga el chat mediante un iframe del mismo origen |
 | `/_gianna/` | Entrada Vite del chat | Nginx exige contexto de iframe y referencia a `/gianna/`; React comprueba el padre |
-| `/admin` y `/admin/` | Entrada Vite del panel | Carga diferida de Admin; la API exige autenticación para datos privados |
+| `/admin/login` | Entrada Vite de acceso al panel | Contraseña y código por correo; `/admin` redirige aquí |
+| `/admin/` | Entrada Vite del panel | Sesión autenticada; la API verifica permisos |
+| Otras rutas `/admin/*` | Página 404 | No se usa un fallback general del panel |
 | `/chat` y `/chat/` | Redirección 302 | Lleva a `/gianna/` |
 | `/api/` | Proxy al backend | Se usa cuando `VITE_API_URL` está vacío |
 | `/health` | Respuesta de Nginx | Salud del servicio frontend |
@@ -492,6 +498,14 @@ Estas herramientas trabajan con el conocimiento activado y cálculos locales. El
 
 ## 9. Administración y acceso con dos pasos
 
+### Nombres, roles y operación por consola
+
+Las cuentas tienen nombre, correo y rol. Un administrador gestiona conocimiento y su contraseña. Un superadministrador también gestiona usuarios, roles y auditoría. La API comprueba los permisos en cada solicitud; el panel adapta sus controles. Un cambio de rol revoca las sesiones del usuario y no se puede quitar el último superadministrador activo.
+
+Las migraciones SQL de `backend/migrations/` se aplican transaccionalmente con `PRAGMA user_version`: administración en versión 2 y cupos en versión 1. Las cuentas preexistentes mantienen todos sus permisos como superadministradores; sus nombres iniciales se derivan del correo.
+
+Los comandos de operación están en [backend/Instructions.txt](backend/Instructions.txt): entorno virtual, dependencias, `python -m manage db upgrade -d migrations`, `seed-data`, `create-admin nombre correo contraseña true/false` y `python asgi.py`. La migración y preparación manual requieren el servicio detenido.
+
 El panel es una aplicación React independiente del chat y se carga mediante `React.lazy`. Sus solicitudes incluyen credenciales; las mutaciones añaden `X-CSRF-Token`.
 
 ```mermaid
@@ -518,7 +532,11 @@ sequenceDiagram
     API->>DB: Validar y consumir código en transacción
     API->>DB: Crear sesión authenticated
     API-->>UI: Cookie rotada + CSRF nuevo
-    UI->>API: Consultar conocimiento, versiones y usuarios
+    UI->>API: Consultar conocimiento y versiones
+    opt Cuenta superadministradora
+        UI->>API: Gestionar cuentas, roles y auditoría
+        API->>DB: Comprobar rol activo de la sesión
+    end
 ```
 
 ### Controles y estado
@@ -693,6 +711,7 @@ El acceso al iframe se controla mediante encabezados de navegación, referencia 
 | `PROXY_TRUSTED_IPS` | Backend / ejecución | Proxies autorizados por Uvicorn |
 | `ADMIN_SECRET_KEY` | Backend / ejecución | Clave estable para firmas y hashes HMAC |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Backend / primer arranque | Creación opcional del primer administrador |
+| `ADMIN_NAME` | Backend / primer arranque | Nombre visible de la primera cuenta, con rol de superadministrador |
 | `ADMIN_COOKIE_SECURE`, `ADMIN_COOKIE_SAMESITE` | Backend / ejecución | Comportamiento de la cookie del panel |
 | `ADMIN_SESSION_HOURS` | Backend / ejecución | Duración de la sesión administrativa |
 | `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USE_TLS`, `MAIL_USE_SSL` | Backend / ejecución | Transporte SMTP |
@@ -745,9 +764,9 @@ Los cambios de variables incorporadas al build requieren recompilar el frontend.
 
 ## 15. Validación y documentos relacionados
 
-La validación funcional realizada anteriormente cubre **74 pruebas aprobadas**: 26 del backend, cinco unitarias del portal, 35 de navegador y ocho de integración entre contenedores mediante proxy y CORS. También se comprobó una consulta con Ollama Cloud, persistencia de cupos tras reinicio y ausencia de tablas de conversaciones.
+La validación funcional cubre **84 pruebas aprobadas**: 34 del backend, cinco unitarias del portal, 37 de navegador y ocho de integración entre contenedores mediante proxy y CORS. Incluye comandos de preparación, migraciones, nombres, roles y rutas administrativas. También se comprobó una consulta con Ollama Cloud, persistencia de cupos tras reinicio y ausencia de tablas de conversaciones.
 
-Esta actualización documenta el código existente. Los resultados, alcance de la simulación y estado del SMTP real se detallan en el informe de validación.
+Los resultados, alcance de la simulación y estado del SMTP real se detallan en el informe de validación.
 
 - [README general](README.md)
 - [Instalación y desarrollo](Setup.md)

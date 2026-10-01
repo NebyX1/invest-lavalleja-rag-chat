@@ -1,0 +1,72 @@
+Comandos desde la raíz del backend (carpeta backend en el proyecto integrado).
+Python 3.14 es la versión validada. Docker no requiere Python en el host.
+
+Para crear y activar el entorno virtual en PowerShell:
+    > python -m venv venv
+    > .\venv\Scripts\Activate.ps1
+
+Para instalar dependencias y preparar configuración:
+    > python -m pip install -r requirements.txt
+    > Copy-Item .env.example .env
+Completar Ollama, ADMIN_SECRET_KEY y SMTP en .env antes de continuar.
+
+Para ejecutar migraciones:
+    > python -m manage db upgrade -d migrations
+
+Para poblar datos base:
+    > python -m manage seed-data
+
+Para crear el primer superadministrador:
+    > python -m manage create-admin "Nombre del admin" admin@tu-dominio.uy contraseña-de-admin true
+
+Para crear un administrador:
+    > python -m manage create-admin "Nombre del editor" editor@tu-dominio.uy contraseña-de-admin false
+
+Para solicitar la contraseña de forma interactiva:
+    > python -m manage create-admin "Nombre del admin" admin@tu-dominio.uy --super-admin
+
+Para listar cuentas y roles:
+    > python -m manage list-admins
+
+Para recuperar una contraseña:
+    > python -m manage reset-password --email admin@tu-dominio.uy
+
+Para iniciar la app FastAPI con Uvicorn:
+    > python asgi.py
+También:
+    > python -m manage run
+Recarga de desarrollo:
+    > python asgi.py --reload
+
+El backend utiliza ASGI, SQLite y migraciones SQL propias.
+El administrador gestiona conocimiento y su contraseña.
+El superadministrador también gestiona cuentas, roles y auditoría.
+El primer administrador debe ser superadministrador.
+Las contraseñas tienen entre 12 y 256 caracteres; el login siempre requiere 2FA por correo.
+
+db upgrade y seed-data requieren que el backend esté detenido.
+Las migraciones conservan cuentas, sesiones, documentos y cupos existentes.
+Las cuentas anteriores reciben nombre derivado del correo y rol de superadministrador.
+seed-data prepara directorios, crea la cuenta ADMIN_EMAIL/ADMIN_NAME/ADMIN_PASSWORD
+si no hay usuarios y adopta el índice INDEX_DIR si existe. Es idempotente.
+Si no hay índice, cargar el Word o JSONL validado desde el panel del frontend.
+
+Login del panel en el frontend:
+    http://localhost:8080/admin/login
+Panel autenticado:
+    http://localhost:8080/admin/
+Salud de la API:
+    http://localhost:8010/api/health
+
+La raíz del backend, /admin/login, /docs, /redoc y /openapi.json devuelven 404.
+Las rutas /admin/* desconocidas del frontend también devuelven 404.
+La raíz del frontend muestra el portal Invest Lavalleja.
+
+Docker, migraciones y datos base (backend detenido):
+    > docker compose stop backend
+    > docker compose run --rm backend python -m manage db upgrade -d migrations
+    > docker compose run --rm backend python -m manage seed-data
+    > docker compose up -d backend
+
+Docker, crear cuenta en el servicio activo:
+    > docker compose exec backend python -m manage create-admin "Nombre del admin" admin@tu-dominio.uy --super-admin

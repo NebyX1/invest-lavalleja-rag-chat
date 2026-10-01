@@ -4,7 +4,7 @@ import './index.css'
 import App from './App.jsx'
 
 const Admin = lazy(() => import('./Admin.jsx'))
-const isAdmin = /^\/admin(?:\/|$)/.test(window.location.pathname)
+const isAdmin = /^\/admin(?:\/(?:login\/?)?)?$/.test(window.location.pathname)
 
 let inPortal = false
 try {

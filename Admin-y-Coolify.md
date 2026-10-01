@@ -48,15 +48,21 @@ La API comprueba el origen y la sesión firmada incluso cuando el navegador perm
 
 ## Administración
 
-`/admin` conserva contraseña Argon2 y código por correo. Código válido durante 10 minutos, cinco intentos y un único uso. El reenvío espera un minuto y no reinicia intentos. Sesiones revocables de ocho horas por defecto, cookies HttpOnly y CSRF en escrituras.
+`/admin/login` en el frontend conserva contraseña Argon2 y código por correo; después de verificar se accede a `/admin/`. Código válido durante 10 minutos, cinco intentos y un único uso. El reenvío espera un minuto y no reinicia intentos. Sesiones revocables de ocho horas por defecto, cookies HttpOnly y CSRF en escrituras.
+
+Los administradores gestionan conocimiento y su contraseña; los superadministradores también gestionan cuentas, roles y auditoría. El primer usuario debe ser superadministrador. Las cuentas anteriores mantienen permisos mediante la migración a superadministrador.
 
 Para crear una cuenta desde el contenedor del backend:
 
 ```sh
-python admin_cli.py create --email administrador@tu-dominio.uy
+python -m manage create-admin "Nombre del admin" administrador@tu-dominio.uy --super-admin
 ```
 
 La consola solicita la contraseña sin mostrarla. El panel gestiona carga, actualización, activación, eliminación, reindexación y restauración de versiones. Admite archivos hasta 10 MiB. Los índices confirmados sobreviven a reinicios; un fallo de ingesta mantiene la versión anterior. Ninguna tabla guarda conversaciones.
+
+Los comandos de migración y datos base se describen en [backend/Instructions.txt](backend/Instructions.txt). El backend admite comandos pasados a su contenedor. Para migrar manualmente, detener el servicio y ejecutar `docker compose run --rm backend python -m manage db upgrade -d migrations`; el arranque también aplica las migraciones pendientes. La migración conserva los datos y los cupos.
+
+El backend devuelve 404 en `/`, `/admin/login`, `/docs`, `/redoc` y `/openapi.json`. Las rutas `/admin/*` desconocidas del frontend también devuelven 404.
 
 SMTP admite TLS en 587 o SSL en 465. No activar ambos. Para revisar conexión y autenticación sin enviar correo:
 
@@ -73,13 +79,14 @@ docker compose --env-file backend/.env -f compose.yaml -f compose.local.yaml up 
 docker compose --env-file backend/.env -f compose.yaml -f compose.local.yaml ps
 ```
 
-Abrir `http://localhost:8080/gianna/` y `/admin`. El backend está en otro contenedor, en el puerto 8010. La simulación usa HTTP en loopback; Coolify proporciona certificados y proxy HTTPS reales.
+Abrir `http://localhost:8080/gianna/` y `/admin/login`. El backend está en otro contenedor, en el puerto 8010. La simulación usa HTTP en loopback; Coolify proporciona certificados y proxy HTTPS reales.
 
 [Resultados y alcance de las pruebas](PRODUCTION-VALIDATION.md).
 
 ## Referencias revisadas
 
 - [Backend del Buzón Ciudadano](https://github.com/IntendenciaDeLavalleja/buzon-ciudadano-backend): imagen Python autónoma, entrypoint y comprobación de salud.
+- [Comandos y rutas del backend de referencia](https://github.com/NebyX1/buzon-ciudadano-backend): entorno virtual, migración, datos base, alta de administrador con nombre y rol, y entrada administrativa explícita.
 - [Frontend del Buzón Ciudadano](https://github.com/IntendenciaDeLavalleja/buzon-ciudadano-frontend): build Node separado del runtime Nginx, URL pública de la API en compilación y credenciales del navegador.
 
 Se adaptaron estos patrones a FastAPI y al agente existente; se conservaron sus tecnologías.

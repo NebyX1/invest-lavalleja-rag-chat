@@ -22,3 +22,9 @@ class RuntimeLock:
 
     def close(self):
         self.file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()

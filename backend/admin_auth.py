@@ -41,6 +41,13 @@ def normalize_email(value):
     return email
 
 
+def normalize_name(value):
+    name = value.strip()
+    if not 1 <= len(name) <= 80 or not name.isprintable():
+        raise ValueError("El nombre debe tener entre 1 y 80 caracteres visibles.")
+    return name
+
+
 def send_code(email, code):
     host = os.getenv("MAIL_SERVER", "")
     use_ssl = os.getenv("MAIL_USE_SSL", "false").lower() in ("true", "1", "t")
@@ -99,15 +106,19 @@ class AdminAuth:
             with db.connect() as conn:
                 exists = conn.execute("SELECT 1 FROM users LIMIT 1").fetchone()
             if not exists:
-                self.create_user(email, password, "bootstrap")
+                self.create_user(email, password, "bootstrap", os.getenv("ADMIN_NAME") or "Administrador", True)
 
-    def create_user(self, email, password, actor):
+    def create_user(self, email, password, actor, name=None, is_superadmin=True):
         email, encoded = normalize_email(email), password_hash(password)
+        name = normalize_name(name if name is not None else email)
         with self.db.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             if conn.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
                 raise ValueError("Ya existe un administrador con ese correo.")
-            conn.execute("INSERT INTO users(id,email,password_hash,created) VALUES(?,?,?,?)",
-                         (uuid.uuid4().hex, email, encoded, time.time()))
+            if not is_superadmin and not conn.execute("SELECT 1 FROM users WHERE active=1 AND is_superadmin=1 LIMIT 1").fetchone():
+                raise ValueError("El primer administrador debe ser superadministrador.")
+            conn.execute("INSERT INTO users(id,email,password_hash,created,name,is_superadmin) VALUES(?,?,?,?,?,?)",
+                         (uuid.uuid4().hex, email, encoded, time.time(), name, int(is_superadmin)))
         self.db.audit(actor, "admin.create", email)
 
     def digest(self, value):
@@ -128,19 +139,21 @@ class AdminAuth:
                             secure=self.secure, httponly=True, samesite=self.samesite, path="/api/admin")
         return {"stage": stage, "csrf": csrf}
 
-    def session(self, request, required=False):
+    def session(self, request, required=False, superadmin=False):
         token = request.cookies.get(COOKIE, "")
         with self.db.connect() as conn:
-            row = conn.execute("SELECT s.*, u.email,u.active FROM sessions s LEFT JOIN users u ON s.user_id=u.id WHERE token_hash=? AND expires>?",
+            row = conn.execute("SELECT s.*, u.email,u.active,u.name,u.is_superadmin FROM sessions s LEFT JOIN users u ON s.user_id=u.id WHERE token_hash=? AND expires>?",
                                (self.digest(token), time.time())).fetchone()
         if not row or (row["user_id"] and not row["active"]):
             raise HTTPException(401, "La sesión venció. Volvé a ingresar.")
         if required and row["stage"] != "authenticated":
             raise HTTPException(401, "Completá los dos pasos de acceso.")
+        if superadmin and not row["is_superadmin"]:
+            raise HTTPException(403, "Esta operación requiere un superadministrador.")
         return dict(row)
 
-    def protect(self, request, required=True):
-        row = self.session(request, required)
+    def protect(self, request, required=True, superadmin=False):
+        row = self.session(request, required, superadmin)
         csrf = request.headers.get("X-CSRF-Token", "")
         if not hmac.compare_digest(row["csrf"], csrf):
             raise HTTPException(403, "La solicitud de seguridad venció. Recargá el panel.")
@@ -200,7 +213,7 @@ class AdminAuth:
             raise HTTPException(400, "Código inválido, vencido o bloqueado después de 5 intentos.")
         result = self.new_session(response, "authenticated", old["user_id"])
         self.db.audit(old["email"], "login.success")
-        return {**result, "email": old["email"]}
+        return {**result, "email": old["email"], "name": old["name"], "is_superadmin": bool(old["is_superadmin"])}
 
     def resend(self, request):
         old = self.protect(request, False)

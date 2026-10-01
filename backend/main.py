@@ -79,7 +79,8 @@ async def lifespan(app: FastAPI):
         lock.close()
 
 
-app = FastAPI(title="Gianna - Invest Lavalleja", lifespan=lifespan)
+app = FastAPI(title="Gianna - Invest Lavalleja", lifespan=lifespan,
+              docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(AdminHeaders)
 app.include_router(admin_router(admin_auth, knowledge, admin_db))
 app.add_middleware(

@@ -6,10 +6,10 @@ Ejecutada localmente el 1 de octubre de 2026, con Docker Desktop, Node 24 y Pyth
 
 | Comprobación | Resultado |
 |---|---|
-| Backend, administración, contrato SSE, cuotas, concurrencia y vencimiento | 26 pruebas aprobadas |
+| Backend, administración, roles, migraciones, CLI, contrato SSE, cuotas, concurrencia y vencimiento | 34 pruebas aprobadas |
 | Catálogo y persistencia del portal | 5 pruebas unitarias aprobadas |
-| Portal, rutas, navegación, dossier, wizard, PDF, accesibilidad y Gianna, escritorio/móvil | 35 pruebas aprobadas |
-| Contenedores separados, SSE del agente, herramientas, cookies, correo 2FA y CSRF por proxy/CORS | 8 pruebas aprobadas |
+| Portal, rutas, navegación, dossier, wizard, PDF, accesibilidad y Gianna, escritorio/móvil | 37 pruebas aprobadas |
+| Contenedores separados, SSE, herramientas, 2FA, CSRF y gestión de nombres/roles por proxy/CORS | 8 pruebas aprobadas |
 | Astro check / ESLint | 0 errores, 0 advertencias |
 | npm audit, portal y agente | 0 vulnerabilidades después de actualizar Vitest a 4.1.11 |
 | Build local y Docker del frontend | 32 páginas Astro y cliente React ensamblados |
@@ -19,7 +19,28 @@ Ejecutada localmente el 1 de octubre de 2026, con Docker Desktop, Node 24 y Pyth
 | Persistencia | Cuenta, conocimiento y cupos sobreviven a reinicios |
 | Salud de la instalación local | `ok=true`, `knowledge_ready=true`, 224 fragmentos |
 
-La suite ordinaria omite ocho pruebas que necesitan el entorno aislado y una captura móvil duplicada. Las ocho pruebas de integración se ejecutaron aparte y aprobaron. Total: **74 pruebas aprobadas**, además de las comprobaciones de runtime.
+La suite ordinaria omite ocho pruebas que necesitan el entorno aislado y una captura móvil duplicada. Las ocho pruebas de integración se ejecutaron aparte y aprobaron. Total: **84 pruebas aprobadas**, además de las comprobaciones de runtime.
+
+## Comandos, roles y rutas administrativas
+
+Se ejecutaron migraciones, altas de ambas clases de administrador y dos ejecuciones de `seed-data` mediante procesos reales del CLI. Se verificaron la idempotencia, conservación de cuentas y cupos anteriores, rechazo de esquemas futuros y rollback de una migración fallida. La imagen Docker admite `python -m manage db upgrade -d migrations` directamente mediante su entrypoint.
+
+Antes de actualizar la instalación local se guardaron copias SQLite dentro del volumen privado. Después de migrar, los registros previos permanecieron: cuatro sesiones, un documento, una revisión y dos entradas de cuotas. La base administrativa quedó en versión 2 y la de cupos en versión 1.
+
+Los tests de API comprobaron que un administrador puede gestionar conocimiento y su contraseña, pero obtiene 403 al gestionar usuarios, roles o auditoría. Un superadministrador puede crear cuentas con nombre, promoverlas y quitarles el rol; el cambio revoca las sesiones de la cuenta. No se permite desactivar ni quitar el rol al último superadministrador activo.
+
+Los navegadores de escritorio y móvil completaron el acceso de ambas clases de cuenta con SMTP aislado, por proxy y CORS. El segundo acceso espera a que llegue su código y respeta el `Retry-After` de la protección real del login cuando la IP compartida de Docker alcanza su límite.
+
+| Ruta | Frontend | Backend |
+|---|---|---|
+| `/` | 200, portal Invest | 404 |
+| `/admin` | 302 a `/admin/login` | 404 |
+| `/admin/login` | 200, acceso con contraseña y código | 404 |
+| `/admin/` | 200, interfaz; API privada exige 2FA | 404 |
+| `/admin/no-existe`, `/admin/index.html` | 404 | 404 |
+| `/docs`, `/redoc`, `/openapi.json` | — | 404 |
+
+La prueba de instalación vacía verificó las versiones de esquema, nombre y rol de la cuenta inicial, acceso privado, UID 10001 y persistencia tras reinicio. El arranque local continúa usando FastAPI/Uvicorn mediante `python asgi.py`.
 
 ## Cuotas y conversaciones
 

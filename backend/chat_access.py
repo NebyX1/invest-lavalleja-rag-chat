@@ -12,6 +12,8 @@ from uuid import UUID
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from db_migrations import upgrade_database
+
 LIMIT = 20
 COOLDOWN = 600
 SESSION_TTL = 30 * 86400
@@ -25,9 +27,7 @@ class ChatAccess:
     def __init__(self, root, secret, origins, clock=time.time):
         self.path, self.secret, self.origins, self.clock = root / "chat-quota.sqlite3", secret, set(origins), clock
         root.mkdir(parents=True, exist_ok=True)
-        with self.connect() as db:
-            db.execute("PRAGMA journal_mode=WAL")
-            db.execute("CREATE TABLE IF NOT EXISTS quotas (key TEXT PRIMARY KEY, used INTEGER NOT NULL, blocked_until REAL NOT NULL, updated REAL NOT NULL)")
+        upgrade_database(self.path, "quota")
 
     @contextmanager
     def connect(self):

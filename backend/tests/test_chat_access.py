@@ -144,7 +144,7 @@ def test_api_quota_headers_invalid_input_and_expiry(api, capsys):
 
 def test_backend_serves_only_api_and_cors_credentials(api):
     client, _, _ = api
-    for path in ("/", "/gianna/", "/chat/", "/admin", "/assets/app.js"):
+    for path in ("/", "/gianna/", "/chat/", "/admin", "/admin/login", "/docs", "/redoc", "/openapi.json", "/.env", "/assets/app.js"):
         assert client.get(path).status_code == 404
     assert client.get("/api/admin/knowledge").status_code == 401
     assert client.post("/api/chat/session", json={"browser_id": str(uuid4())}).status_code == 403

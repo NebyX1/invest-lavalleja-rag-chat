@@ -268,6 +268,53 @@ def test_accounts_cannot_disable_last_admin_and_password_change_revokes_sessions
     assert client.get("/api/admin/knowledge").status_code == 401
 
 
+def test_superadmin_names_roles_and_last_superadmin(system):
+    headers = login(system)
+    client, auth, _, db, _, _ = system
+    primary = client.get("/api/admin/users").json()[0]
+    assert primary["is_superadmin"] == 1 and primary["name"]
+    created = client.post("/api/admin/users", json={"email": "editor@example.test",
+        "password": PASSWORD, "name": "Editor", "is_superadmin": False}, headers=headers)
+    assert created.status_code == 201
+    assert client.post(f"/api/admin/users/{primary['id']}/role", json={"is_superadmin": False},
+                       headers=headers).status_code == 409
+    assert client.post(f"/api/admin/users/{primary['id']}/enabled", json={"enabled": False},
+                       headers=headers).status_code == 409
+    editor = next(user for user in client.get("/api/admin/users").json() if user["email"] == "editor@example.test")
+    from fastapi import Response
+    auth.new_session(Response(), "authenticated", editor["id"])
+    assert client.post(f"/api/admin/users/{editor['id']}/role", json={"is_superadmin": True},
+                       headers=headers).status_code == 200
+    with db.connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM sessions WHERE user_id=?", (editor["id"],)).fetchone()[0] == 0
+    assert client.post("/api/admin/users", json={"email": "bad@example.test", "password": PASSWORD,
+        "is_superadmin": "false"}, headers=headers).status_code == 422
+
+
+def test_regular_admin_can_manage_knowledge_but_not_users_or_audit(system):
+    client, auth, _, _, mail, _ = system
+    auth.create_user("editor@example.test", PASSWORD, "test", "Editor", False)
+    csrf = client.get("/api/admin/session").json()["csrf"]
+    pending = client.post("/api/admin/login", json={"email": "editor@example.test", "password": PASSWORD},
+                          headers={"X-CSRF-Token": csrf}).json()
+    verified = client.post("/api/admin/verify", json={"code": mail[-1][1]},
+                           headers={"X-CSRF-Token": pending["csrf"]})
+    assert verified.status_code == 200
+    assert verified.json()["name"] == "Editor" and verified.json()["is_superadmin"] is False
+    headers = {"X-CSRF-Token": verified.json()["csrf"]}
+    assert client.get("/api/admin/knowledge").status_code == 200
+    assert client.get("/api/admin/knowledge/revisions").status_code == 200
+    assert client.get("/api/admin/users").status_code == 403
+    assert client.get("/api/admin/audit").status_code == 403
+    assert client.post("/api/admin/users", json={"email": "new@example.test", "password": PASSWORD},
+                       headers=headers).status_code == 403
+    assert client.post("/api/admin/users/unknown/role", json={"is_superadmin": True}, headers=headers).status_code == 403
+    assert upload(system, headers)["active"]["chunks"] == 1
+    changed = client.post("/api/admin/password", json={"current_password": PASSWORD,
+        "password": "Editor-new-password-2026!"}, headers=headers)
+    assert changed.status_code == 200 and changed.json()["stage"] == "anonymous"
+
+
 def test_restart_marks_interrupted_job_failed_and_removes_uncommitted_index(system):
     _, _, manager, db, _, state = system
     with db.connect() as conn:

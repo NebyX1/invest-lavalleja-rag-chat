@@ -4,6 +4,38 @@ API Python autónoma: FastAPI, Uvicorn, LangGraph, Ollama Cloud, embeddings, rer
 
 [Arquitectura y flujos del sistema](../Arquitectura.md): API, agente, recuperación, cupos, administración e indexación.
 
+## Preparación y comandos
+
+Ver [Instructions.txt](Instructions.txt). Desde la carpeta del backend:
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+# Completar .env antes de continuar.
+python -m manage db upgrade -d migrations
+python -m manage seed-data
+python -m manage create-admin "Nombre del admin" admin@tu-dominio.uy --super-admin
+python asgi.py
+```
+
+El comando de alta también admite los argumentos del ejemplo:
+
+```powershell
+python -m manage create-admin "Nombre" correo@tu-dominio.uy contraseña-de-admin true
+```
+
+`true` crea un superadministrador; `false`, un administrador. El primer usuario debe ser superadministrador. Las migraciones SQL se versionan con `PRAGMA user_version`, se aplican también al inicializar las bases y preservan los datos existentes. Los administradores anteriores conservan sus permisos como superadministradores.
+
+`seed-data` prepara las carpetas, la primera cuenta configurada por entorno y el índice previo, si existe. No genera contenido de inversión. Los comandos de migración y preparación requieren el backend detenido; la creación de cuentas puede hacerse con el servicio activo.
+
+## Panel y permisos
+
+El acceso web está en **`/admin/login` del frontend**; después de 2FA se usa `/admin/`. Un administrador gestiona conocimiento y su contraseña. Un superadministrador también crea cuentas, modifica roles y consulta auditoría. Cambiar un rol revoca las sesiones del usuario y siempre debe quedar un superadministrador activo.
+
+El backend publica únicamente la API. `/`, `/admin/login`, `/docs`, `/redoc` y `/openapi.json` devuelven 404; las rutas administrativas privadas requieren 2FA. Las rutas desconocidas bajo `/admin/` del frontend devuelven 404.
+
 Copiar `.env.example` a `.env` y configurar las variables antes de ejecutar:
 
 ```sh

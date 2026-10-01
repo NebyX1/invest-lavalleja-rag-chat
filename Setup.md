@@ -1,5 +1,7 @@
 # Instalación
 
+Para preparar el backend con entorno virtual, migraciones, datos base, nombres y roles, seguir [backend/Instructions.txt](backend/Instructions.txt). Incluye los comandos `python -m manage db upgrade -d migrations`, `seed-data`, `create-admin` y el arranque `python asgi.py`.
+
 ## Docker (recomendado)
 
 Se necesita Docker con Compose v2.20 o superior. No se necesita Python ni Node en el host.
@@ -53,4 +55,4 @@ Para convertir el documento original:
 backend/.venv/Scripts/python backend/knowledge_cli.py export backend/rag-data/Invest_Lavalleja_Guia_de_Inversiones_2026.docx backend/rag-data/Invest_Lavalleja_Guia_de_Inversiones_2026.rag.jsonl
 ```
 
-Subir el resultado desde `/admin` después de completar contraseña y código por correo. La API de salud indica `knowledge_ready=false` hasta activar conocimiento; el panel sigue disponible.
+Subir el resultado entrando por `/admin/login`, después de completar contraseña y código por correo. La API de salud indica `knowledge_ready=false` hasta activar conocimiento; el panel sigue disponible.
